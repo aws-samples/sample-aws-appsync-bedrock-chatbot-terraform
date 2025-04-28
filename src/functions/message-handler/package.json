@@ -1,0 +1,15 @@
+{
+  "name": "message-handler",
+  "version": "1.0.0",
+  "description": "Lambda function for handling chat messages",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.1450.0",
+    "uuid": "^9.0.0"
+  },
+  "author": "",
+  "license": "MIT"
+}

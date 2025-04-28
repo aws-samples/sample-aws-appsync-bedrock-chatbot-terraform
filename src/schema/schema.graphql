@@ -1,0 +1,37 @@
+type Message {
+  id: ID!
+  conversationId: ID!
+  content: String!
+  role: String!  # "user" or "assistant"
+  timestamp: AWSDateTime!
+}
+
+type Conversation {
+  id: ID!
+  title: String
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+}
+
+type Query {
+  getMessage(id: ID!): Message
+  getConversation(id: ID!): Conversation
+  listConversations: [Conversation]
+  getMessages(conversationId: ID!): [Message]
+}
+
+type Mutation {
+  sendMessage(conversationId: ID!, content: String!): Message
+  createConversation(title: String): Conversation
+}
+
+type Subscription {
+  onNewMessage(conversationId: ID!): Message
+    @aws_subscribe(mutations: ["sendMessage"])
+}
+
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}

@@ -1,0 +1,14 @@
+{
+  "name": "bedrock-client",
+  "version": "1.0.0",
+  "description": "Lambda function for interacting with Amazon Bedrock",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.1450.0"
+  },
+  "author": "",
+  "license": "MIT"
+}

@@ -1,0 +1,82 @@
+# Create a zip file for the message handler Lambda function
+data "archive_file" "message_handler_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../../../src/functions/message-handler"
+  output_path = "${path.module}/message-handler.zip"
+}
+
+# Create a zip file for the Bedrock client Lambda function
+data "archive_file" "bedrock_client_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../../../src/functions/bedrock-client"
+  output_path = "${path.module}/bedrock-client.zip"
+}
+
+# Lambda function for handling messages
+resource "aws_lambda_function" "message_handler" {
+  function_name = "${var.project_name}-message-handler-${var.environment}"
+  description   = "Lambda function for handling chat messages"
+  role          = var.lambda_execution_role_arn
+  handler       = "index.handler"
+  runtime       = "nodejs18.x"
+  timeout       = 30
+  memory_size   = 256
+
+  filename         = data.archive_file.message_handler_zip.output_path
+  source_code_hash = data.archive_file.message_handler_zip.output_base64sha256
+
+  environment {
+    variables = {
+      MESSAGES_TABLE_NAME      = var.dynamodb_messages_table_name
+      CONVERSATIONS_TABLE_NAME = var.dynamodb_conversations_table_name
+      BEDROCK_CLIENT_FUNCTION  = aws_lambda_function.bedrock_client.function_name
+    }
+  }
+
+  tags = {
+    Name        = "${var.project_name}-message-handler"
+    Environment = var.environment
+  }
+}
+
+# Lambda function for Bedrock client
+resource "aws_lambda_function" "bedrock_client" {
+  function_name = "${var.project_name}-bedrock-client-${var.environment}"
+  description   = "Lambda function for interacting with Amazon Bedrock"
+  role          = var.lambda_execution_role_arn
+  handler       = "index.handler"
+  runtime       = "nodejs18.x"
+  timeout       = 60
+  memory_size   = 256
+
+  filename         = data.archive_file.bedrock_client_zip.output_path
+  source_code_hash = data.archive_file.bedrock_client_zip.output_base64sha256
+
+  environment {
+    variables = {
+      BEDROCK_MODEL_ID = var.bedrock_model_id
+    }
+  }
+
+  tags = {
+    Name        = "${var.project_name}-bedrock-client"
+    Environment = var.environment
+  }
+}
+
+# Permission for AppSync to invoke the message handler Lambda function
+resource "aws_lambda_permission" "appsync_message_handler_permission" {
+  statement_id  = "AllowAppSyncToInvokeMessageHandler"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.message_handler.function_name
+  principal     = "appsync.amazonaws.com"
+}
+
+# Permission for the message handler to invoke the Bedrock client Lambda function
+resource "aws_lambda_permission" "message_handler_bedrock_client_permission" {
+  statement_id  = "AllowMessageHandlerToInvokeBedrockClient"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.bedrock_client.function_name
+  principal     = "lambda.amazonaws.com"
+  source_arn    = aws_lambda_function.message_handler.arn
+}
