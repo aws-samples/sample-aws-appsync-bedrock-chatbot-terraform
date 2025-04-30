@@ -8,6 +8,9 @@
   padding: 1rem;
   border-bottom: 1px solid #e0e0e0;
   background-color: #f9f9f9;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .chat-header h2 {
@@ -85,4 +88,12 @@
 
 .error {
   color: #f44336;
+}
+
+
+
+@keyframes flash {
+  0% { opacity: 0; }
+  50% { opacity: 1; }
+  100% { opacity: 0; }
 }

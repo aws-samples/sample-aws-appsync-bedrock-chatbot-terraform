@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useSubscription, useApolloClient } from '@apollo/client';
 import { GET_MESSAGES, SEND_MESSAGE, ON_NEW_MESSAGE, ON_MESSAGE_UPDATE } from '../graphql/operations';
-import MessageBubble from './MessageBubble';
+import MessageList from './MessageList';
 import './ChatInterface.css';
 
 function ChatInterface({ conversation }) {
@@ -231,6 +231,10 @@ function ChatInterface({ conversation }) {
                 .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
               
               console.log('Merged messages with new assistant message:', mergedMessages);
+              
+              // Force scroll to bottom when a new message is added
+              setTimeout(forceScrollToBottom, 50);
+              
               return mergedMessages;
             });
           }
@@ -249,7 +253,11 @@ function ChatInterface({ conversation }) {
     onSubscriptionData: ({ subscriptionData, client }) => {
       // When we receive a message update via subscription
       const update = subscriptionData.data.onMessageUpdate;
-      console.log('Subscription received message update:', update);
+      console.log('Subscription received message update:', update, {
+        timestamp: new Date().toISOString(),
+        contentLength: update.content ? update.content.length : 0,
+        isComplete: update.isComplete
+      });
       
       try {
         // Get the current messages from the cache
@@ -259,7 +267,12 @@ function ChatInterface({ conversation }) {
         });
         
         const getMessages = currentData?.getMessages || [];
-        console.log('Current messages in cache:', getMessages);
+        console.log('Current messages in cache:', getMessages, {
+          count: getMessages.length,
+          containerScrollHeight: document.querySelector('.messages-container')?.scrollHeight,
+          containerScrollTop: document.querySelector('.messages-container')?.scrollTop,
+          timestamp: new Date().toISOString()
+        });
         
         // Debug message IDs
         console.log('Looking for message with ID:', update.messageId);
@@ -394,7 +407,11 @@ function ChatInterface({ conversation }) {
             _lastUpdated: Date.now() // Add a timestamp to force React to detect the change
           };
           
-          console.log('UPDATED MESSAGE OBJECT:', updatedMessage);
+          console.log('UPDATED MESSAGE OBJECT:', updatedMessage, {
+            contentLength: updatedMessage.content ? updatedMessage.content.length : 0,
+            contentPreview: updatedMessage.content ? updatedMessage.content.substring(0, 50) + '...' : '',
+            timestamp: new Date().toISOString()
+          });
           
           // Create a completely new array with the updated message
           let newMessages = [...getMessages];
@@ -465,7 +482,21 @@ function ChatInterface({ conversation }) {
             const mergedMessages = Array.from(messageMap.values())
               .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
             
-            console.log('Merged messages:', mergedMessages);
+            console.log('Merged messages:', mergedMessages, {
+              count: mergedMessages.length,
+              lastMessage: mergedMessages.length > 0 ? {
+                id: mergedMessages[mergedMessages.length - 1].id,
+                role: mergedMessages[mergedMessages.length - 1].role,
+                contentLength: mergedMessages[mergedMessages.length - 1].content ? mergedMessages[mergedMessages.length - 1].content.length : 0
+              } : null,
+              timestamp: new Date().toISOString()
+            });
+            
+            // Force scroll to bottom after message update
+            setTimeout(() => {
+              console.log("Forcing scroll after message update");
+              forceScrollToBottom();
+            }, 50);
             return mergedMessages;
           });
           
@@ -488,10 +519,34 @@ function ChatInterface({ conversation }) {
     }
   });
 
+  
+  // Track if we should auto-scroll (user hasn't manually scrolled up)
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
+  
+  // Function to check if user has manually scrolled up
+  const checkShouldAutoScroll = () => {
+    const container = document.querySelector('.messages-container');
+    if (container) {
+      // If we're within 30px of the bottom, we should auto-scroll
+      const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 30;
+      setShouldAutoScroll(isNearBottom);
+      
+      console.log("Scroll position check:", {
+        scrollHeight: container.scrollHeight,
+        scrollTop: container.scrollTop,
+        clientHeight: container.clientHeight,
+        distanceFromBottom: container.scrollHeight - container.scrollTop - container.clientHeight,
+        shouldAutoScroll: isNearBottom,
+        timestamp: new Date().toISOString()
+      });
+    }
+  };
+  
   // Scroll to bottom when messages change
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [data, subscriptionData, messageUpdateData]);
+    // Use direct DOM manipulation with a small delay to ensure DOM has updated
+    setTimeout(forceScrollToBottom, 50);
+  }, [data, subscriptionData, messageUpdateData, messages]);
   
   // Force re-render when messages change
   const [forceUpdate, setForceUpdate] = useState(0);
@@ -499,10 +554,35 @@ function ChatInterface({ conversation }) {
     // This will force a re-render of the component
     const timer = setTimeout(() => {
       setForceUpdate(prev => prev + 1);
+      
+      // Add an additional scroll check after the re-render
+      console.log("Force update triggered, checking scroll position");
+      const container = document.querySelector('.messages-container');
+      if (container) {
+        console.log("Container scroll metrics:", {
+          scrollHeight: container.scrollHeight,
+          clientHeight: container.clientHeight,
+          scrollTop: container.scrollTop,
+          bottomPosition: container.scrollHeight - container.clientHeight - container.scrollTop,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      // Try to scroll again after the update using direct DOM manipulation
+      console.log("Attempting scroll after force update");
+      forceScrollToBottom();
     }, 100); // Small delay to ensure cache is updated
     
     return () => clearTimeout(timer);
   }, [messageUpdateData]);
+  
+  // Use the MessageList's scrollToBottom method
+  const forceScrollToBottom = () => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollToBottom();
+    }
+  };
+  
 
   // Handle form submission to send a new message
   const handleSendMessage = (e) => {
@@ -524,6 +604,40 @@ function ChatInterface({ conversation }) {
       setMessages(data.getMessages);
     }
   }, [data]);
+  
+  // Debug effect to monitor message content changes
+  useEffect(() => {
+    if (messages.length > 0) {
+      const assistantMessages = messages.filter(msg => msg.role === 'assistant');
+      if (assistantMessages.length > 0) {
+        const lastAssistantMsg = assistantMessages[assistantMessages.length - 1];
+        console.log("Last assistant message content changed:", {
+          id: lastAssistantMsg.id,
+          contentLength: lastAssistantMsg.content ? lastAssistantMsg.content.length : 0,
+          isComplete: lastAssistantMsg.isComplete,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+  }, [messages.map(msg => msg.role === 'assistant' ? msg.content : null).join('|')]);
+  
+  // Add scroll event listener to detect manual scrolling
+  useEffect(() => {
+    const container = document.querySelector('.messages-container');
+    if (container) {
+      console.log("Adding scroll event listener to messages container");
+      container.addEventListener('scroll', checkShouldAutoScroll);
+      
+      // Set initial auto-scroll state
+      checkShouldAutoScroll();
+      
+      // Clean up the event listener when the component unmounts
+      return () => {
+        console.log("Removing scroll event listener from messages container");
+        container.removeEventListener('scroll', checkShouldAutoScroll);
+      };
+    }
+  }, []);
   
   // Cleanup effect to remove placeholder messages when we have complete messages
   useEffect(() => {
@@ -581,24 +695,12 @@ function ChatInterface({ conversation }) {
       <div className="chat-header">
         <h2>{conversation.title || 'Untitled Conversation'}</h2>
       </div>
-
-      <div className="messages-container">
-        {messages.length === 0 ? (
-          <div className="empty-chat">
-            <p>No messages yet. Start the conversation!</p>
-          </div>
-        ) : (
-          <div className="messages">
-            {messages.map((message) => (
-              <MessageBubble 
-                key={`${message.id}-${message.content.length}-${message.isComplete ? 'complete' : 'incomplete'}`} 
-                message={message} 
-              />
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-        )}
-      </div>
+      {/* Replace the messages container with our new MessageList component */}
+      <MessageList 
+        messages={messages}
+        onScroll={(isNearBottom) => setShouldAutoScroll(isNearBottom)}
+        ref={messagesEndRef}
+      />
 
       <form className="message-input-form" onSubmit={handleSendMessage}>
         <input
