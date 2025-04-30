@@ -15,6 +15,11 @@ function MessageBubble({ message }) {
   // Check if the message is still being generated (streaming)
   const isGenerating = message.role === 'assistant' && message.isComplete === false;
   
+  // Check if this is a placeholder message (just "...")
+  const isPlaceholder = message.role === 'assistant' && 
+                        message.content === "..." && 
+                        message.id.startsWith('placeholder-');
+  
   // Log for debugging
   console.log('MessageBubble rendering:', {
     id: message.id,
@@ -23,11 +28,18 @@ function MessageBubble({ message }) {
     isComplete: message.isComplete
   });
 
+  // Don't render placeholder messages if they should be hidden
+  if (isPlaceholder) {
+    console.log('Skipping render of placeholder message:', message.id);
+    return null;
+  }
+
   return (
     <div 
       className={`message-bubble ${isUserMessage ? 'user-message' : 'assistant-message'}`}
       data-message-id={message.id}
       data-content-length={message.content ? message.content.length : 0}
+      data-is-placeholder={isPlaceholder ? 'true' : 'false'}
     >
       <div className="message-content">
         {message.content}
