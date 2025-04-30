@@ -27,3 +27,6 @@ variable "dynamodb_conversations_table_name" {
   description = "Name of the DynamoDB conversations table"
   type        = string
 }
+
+# These variables are removed to break the circular dependency
+# The AppSync endpoint and API key will be passed through the event payload

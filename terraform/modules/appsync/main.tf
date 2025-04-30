@@ -21,6 +21,19 @@ resource "aws_appsync_api_key" "chatbot_api_key" {
   expires = timeadd(timestamp(), "8760h")
 }
 
+# Store API key in SSM Parameter Store
+resource "aws_ssm_parameter" "appsync_api_key" {
+  name        = "/${var.project_name}/appsync/api-key"
+  description = "API Key for AppSync GraphQL API"
+  type        = "SecureString"
+  value       = aws_appsync_api_key.chatbot_api_key.key
+  
+  tags = {
+    Name        = "${var.project_name}-appsync-api-key"
+    Environment = var.environment
+  }
+}
+
 # IAM role for AppSync logs
 resource "aws_iam_role" "appsync_logs_role" {
   name = "${var.project_name}-appsync-logs-role-${var.environment}"
@@ -229,7 +242,15 @@ resource "aws_appsync_resolver" "send_message_resolver" {
 }
 EOF
 
-  response_template = "$util.toJson($context.result)"
+  response_template = <<EOF
+#if($context.result.userMessage)
+  ## Only return the user message as the mutation result
+  ## The assistant message will be handled by the frontend
+  $util.toJson($context.result.userMessage)
+#else
+  $util.toJson($context.result)
+#end
+EOF
 }
 
 resource "aws_appsync_resolver" "create_conversation_resolver" {
@@ -251,3 +272,27 @@ EOF
 
   response_template = "$util.toJson($context.result)"
 }
+
+# Resolver for updateMessageContent mutation
+resource "aws_appsync_resolver" "update_message_content_resolver" {
+  api_id      = aws_appsync_graphql_api.chatbot_api.id
+  type        = "Mutation"
+  field       = "updateMessageContent"
+  data_source = aws_appsync_datasource.message_handler_datasource.name
+
+  request_template = <<EOF
+{
+  "version": "2018-05-29",
+  "operation": "Invoke",
+  "payload": {
+    "action": "updateMessageContent",
+    "arguments": $util.toJson($context.arguments)
+  }
+}
+EOF
+
+  response_template = "$util.toJson($context.result)"
+}
+
+# Note: Subscription resolvers for onNewMessage and onMessageUpdate have been removed
+# as they are now handled automatically by the @aws_subscribe directive in the schema

@@ -1,0 +1,22 @@
+{
+  "appsync_api_key": {
+    "sensitive": true,
+    "type": "string",
+    "value": "REDACTED-APPSYNC-KEY"
+  },
+  "appsync_graphql_endpoint": {
+    "sensitive": false,
+    "type": "string",
+    "value": "https://REDACTED-APPSYNC-ID.appsync-api.us-east-1.amazonaws.com/graphql"
+  },
+  "dynamodb_conversations_table_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "genai-chatbot-conversations-dev"
+  },
+  "dynamodb_messages_table_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "genai-chatbot-messages-dev"
+  }
+}

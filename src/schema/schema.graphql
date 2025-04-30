@@ -4,6 +4,15 @@ type Message {
   content: String!
   role: String!  # "user" or "assistant"
   timestamp: AWSDateTime!
+  isComplete: Boolean
+}
+
+type MessageUpdate {
+  messageId: ID!
+  conversationId: ID!
+  content: String!
+  isComplete: Boolean!
+  timestamp: AWSDateTime!
 }
 
 type Conversation {
@@ -23,11 +32,15 @@ type Query {
 type Mutation {
   sendMessage(conversationId: ID!, content: String!): Message
   createConversation(title: String): Conversation
+  updateMessageContent(messageId: ID!, conversationId: ID!, content: String!, isComplete: Boolean!): MessageUpdate
 }
 
 type Subscription {
   onNewMessage(conversationId: ID!): Message
     @aws_subscribe(mutations: ["sendMessage"])
+  
+  onMessageUpdate(conversationId: ID!): MessageUpdate
+    @aws_subscribe(mutations: ["updateMessageContent"])
 }
 
 schema {

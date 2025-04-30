@@ -109,6 +109,47 @@ resource "aws_iam_policy" "lambda_invoke_policy" {
   })
 }
 
+# Policy for Lambda to invoke AppSync mutations
+resource "aws_iam_policy" "lambda_appsync_policy" {
+  name        = "${var.project_name}-lambda-appsync-policy-${var.environment}"
+  description = "Policy for Lambda to invoke AppSync mutations"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "appsync:GraphQL",
+          "appsync:ListGraphqlApis",
+          "appsync:ListApiKeys"
+        ]
+        Effect   = "Allow"
+        Resource = "*"  # You can restrict this to specific AppSync API ARNs if needed
+      }
+    ]
+  })
+}
+
+# Policy for Lambda to access SSM parameters
+resource "aws_iam_policy" "lambda_ssm_policy" {
+  name        = "${var.project_name}-lambda-ssm-policy-${var.environment}"
+  description = "Policy for Lambda to access SSM parameters"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters"
+        ]
+        Effect   = "Allow"
+        Resource = "arn:aws:ssm:*:*:parameter/${var.project_name}/*"
+      }
+    ]
+  })
+}
+
 # Attach policies to Lambda execution role
 resource "aws_iam_role_policy_attachment" "lambda_dynamodb_attachment" {
   role       = aws_iam_role.lambda_execution_role.name
@@ -128,6 +169,16 @@ resource "aws_iam_role_policy_attachment" "lambda_logging_attachment" {
 resource "aws_iam_role_policy_attachment" "lambda_invoke_attachment" {
   role       = aws_iam_role.lambda_execution_role.name
   policy_arn = aws_iam_policy.lambda_invoke_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_appsync_attachment" {
+  role       = aws_iam_role.lambda_execution_role.name
+  policy_arn = aws_iam_policy.lambda_appsync_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_ssm_attachment" {
+  role       = aws_iam_role.lambda_execution_role.name
+  policy_arn = aws_iam_policy.lambda_ssm_policy.arn
 }
 
 # AppSync service role

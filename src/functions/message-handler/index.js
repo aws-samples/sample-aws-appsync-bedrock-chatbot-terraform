@@ -31,6 +31,15 @@ exports.handler = async (event) => {
       return sendMessage(args.conversationId, args.content);
     case 'createConversation':
       return createConversation(args.title);
+    case 'updateMessageContent':
+      return updateMessageContent(args.messageId, args.conversationId, args.content, args.isComplete);
+    case 'onNewMessage':
+      // For subscription, just pass through the arguments
+      // This is used by the subscription resolver
+      return args;
+    case 'onMessageUpdate':
+      // For subscription, just pass through the arguments
+      return args;
     default:
       throw new Error(`Unsupported action: ${action}`);
   }
@@ -149,41 +158,56 @@ async function sendMessage(conversationId, content) {
   const historyResult = await dynamodb.query(historyParams).promise();
   console.log('Raw history result:', JSON.stringify(historyResult.Items, null, 2));
   
-  const recentMessages = historyResult.Items.reverse(); // Reverse to get chronological order
-  console.log('Reversed recent messages:', JSON.stringify(recentMessages, null, 2));
+  // Sort messages by timestamp (oldest first)
+  const sortedMessages = historyResult.Items.sort((a, b) => {
+    return new Date(a.timestamp) - new Date(b.timestamp);
+  });
+  console.log('Sorted messages by timestamp:', JSON.stringify(sortedMessages, null, 2));
   
   // Map messages to include only role and content
-  const mappedMessages = recentMessages.map(msg => ({
+  const mappedMessages = sortedMessages.map(msg => ({
     role: msg.role,
     content: msg.content
   }));
   
-  // Filter conversation history to ensure alternating roles
-  // This will keep only the most recent message when consecutive messages have the same role
+  // Filter to ensure the conversation starts with a user message
+  // and maintains proper alternating roles
   const filteredHistory = [];
   let lastRole = null;
   
-  // Process existing messages from history
-  for (let i = 0; i < mappedMessages.length; i++) {
-    const currentMsg = mappedMessages[i];
+  // Find the first user message to start with
+  const firstUserIndex = mappedMessages.findIndex(msg => msg.role === 'user');
+  if (firstUserIndex >= 0) {
+    // Start with the first user message
+    filteredHistory.push(mappedMessages[firstUserIndex]);
+    lastRole = 'user';
     
-    // If this message has a different role than the last one we kept, add it
-    // Or if this is the first message, add it
-    if (currentMsg.role !== lastRole) {
-      filteredHistory.push(currentMsg);
-      lastRole = currentMsg.role;
-    } else {
-      // If same role as previous, replace the last message with this one
-      // This keeps only the most recent message from consecutive messages of the same role
-      console.log(`Found consecutive ${currentMsg.role} messages, keeping only the most recent one`);
-      filteredHistory[filteredHistory.length - 1] = currentMsg;
+    // Process remaining messages in chronological order
+    for (let i = firstUserIndex + 1; i < mappedMessages.length; i++) {
+      const currentMsg = mappedMessages[i];
+      if (currentMsg.role !== lastRole) {
+        filteredHistory.push(currentMsg);
+        lastRole = currentMsg.role;
+      } else {
+        // If same role as previous, replace the last message with this one
+        // This keeps only the most recent message from consecutive messages of the same role
+        console.log(`Found consecutive ${currentMsg.role} messages, keeping only the most recent one`);
+        filteredHistory[filteredHistory.length - 1] = currentMsg;
+      }
     }
   }
   
-  // Now add the new user message, ensuring we don't add it if the last message is already from a user
+  // Create the conversation history
   const conversationHistory = [...filteredHistory];
   
-  if (conversationHistory.length > 0 && conversationHistory[conversationHistory.length - 1].role === 'user') {
+  // Ensure we have the current user message at the end
+  if (conversationHistory.length === 0) {
+    // If no messages, add the current user message
+    conversationHistory.push({
+      role: 'user',
+      content
+    });
+  } else if (conversationHistory[conversationHistory.length - 1].role === 'user') {
     console.log('Last message in filtered history is already from user, replacing with new message');
     // Replace the last user message with the new one
     conversationHistory[conversationHistory.length - 1] = {
@@ -198,6 +222,23 @@ async function sendMessage(conversationId, content) {
     });
   }
   
+  // Final safety check: ensure the first message is from a user
+  if (conversationHistory.length > 0 && conversationHistory[0].role !== 'user') {
+    console.log('First message is not from a user, removing non-user messages from the beginning');
+    // Remove messages until we find a user message
+    while (conversationHistory.length > 0 && conversationHistory[0].role !== 'user') {
+      conversationHistory.shift();
+    }
+    
+    // If we removed all messages, add the current user message
+    if (conversationHistory.length === 0) {
+      conversationHistory.push({
+        role: 'user',
+        content
+      });
+    }
+  }
+  
   // Log the final conversation history
   console.log('Prepared conversation history:', JSON.stringify(conversationHistory, null, 2));
   
@@ -205,40 +246,95 @@ async function sendMessage(conversationId, content) {
   const rolesSequence = conversationHistory.map(msg => msg.role).join(', ');
   console.log('Roles sequence:', rolesSequence);
   
-  // Call Bedrock client Lambda to generate a response
-  const bedrockParams = {
-    FunctionName: BEDROCK_CLIENT_FUNCTION,
-    Payload: JSON.stringify({
-      messages: conversationHistory
-    })
-  };
-  
-  const bedrockResponse = await lambda.invoke(bedrockParams).promise();
-  const bedrockResult = JSON.parse(bedrockResponse.Payload);
-  
-  if (bedrockResult.error) {
-    console.error('Error from Bedrock client:', bedrockResult.error);
-    throw new Error(`Failed to generate response: ${bedrockResult.error}`);
-  }
-  
-  // Create an assistant message with the response
+  // Create an initial empty assistant message
   const assistantMessageId = uuidv4();
+  const assistantTimestamp = new Date().toISOString();
   const assistantMessage = {
     id: assistantMessageId,
     conversationId,
-    content: bedrockResult.response,
+    content: "...", // Initial placeholder
     role: 'assistant',
-    timestamp: new Date().toISOString()
+    timestamp: assistantTimestamp,
+    isComplete: false
   };
   
-  // Save the assistant message
+  // Save the initial assistant message
   await dynamodb.put({
     TableName: MESSAGES_TABLE_NAME,
     Item: assistantMessage
   }).promise();
   
-  // Return the user message (the assistant message will be delivered via subscription)
-  return userMessage;
+  // Get AppSync details
+  const appSync = new AWS.AppSync();
+  const ssm = new AWS.SSM();
+  let appsyncEndpoint = '';
+  let appsyncApiKey = '';
+  
+  try {
+    // List GraphQL APIs to find the one for this project
+    const apis = await appSync.listGraphqlApis().promise();
+    const api = apis.graphqlApis.find(api => api.name.includes(process.env.PROJECT_NAME || 'chatbot'));
+    
+    if (api) {
+      appsyncEndpoint = api.uris.GRAPHQL;
+      
+      // Get API key from SSM Parameter Store
+      try {
+        const parameterName = `/${process.env.PROJECT_NAME}/appsync/api-key`;
+        const parameter = await ssm.getParameter({
+          Name: parameterName,
+          WithDecryption: true
+        }).promise();
+        
+        if (parameter && parameter.Parameter && parameter.Parameter.Value) {
+          appsyncApiKey = parameter.Parameter.Value;
+        } else {
+          console.warn('API key not found in SSM Parameter Store');
+          appsyncApiKey = 'API_KEY_NOT_AVAILABLE';
+        }
+      } catch (ssmError) {
+        console.error('Error getting API key from SSM:', ssmError);
+        appsyncApiKey = 'API_KEY_NOT_AVAILABLE';
+      }
+    }
+  } catch (error) {
+    console.error('Error getting AppSync details:', error);
+    // Continue without AppSync details
+  }
+  
+  // Invoke the streaming handler asynchronously
+  const streamingParams = {
+    FunctionName: process.env.STREAMING_HANDLER_FUNCTION,
+    InvocationType: 'Event', // Asynchronous invocation
+    Payload: JSON.stringify({
+      messageId: assistantMessageId,
+      conversationId,
+      messages: conversationHistory,
+      appsyncEndpoint,
+      appsyncApiKey
+    })
+  };
+  
+  try {
+    await lambda.invoke(streamingParams).promise();
+    console.log('Streaming handler invoked successfully');
+  } catch (error) {
+    console.error('Error invoking streaming handler:', error);
+    
+    // Update the message to indicate an error
+    await updateMessageContent(
+      assistantMessageId, 
+      conversationId, 
+      "Sorry, I encountered an error while generating a response. Please try again.", 
+      true
+    );
+  }
+  
+  // Return both messages so the resolver can handle them appropriately
+  return {
+    userMessage,
+    assistantMessage
+  };
 }
 
 /**
@@ -259,4 +355,34 @@ async function createConversation(title) {
   }).promise();
   
   return conversation;
+}
+
+/**
+ * Update message content for streaming responses
+ */
+async function updateMessageContent(messageId, conversationId, content, isComplete) {
+  const timestamp = new Date().toISOString();
+  
+  // Update the message in DynamoDB
+  await dynamodb.update({
+    TableName: MESSAGES_TABLE_NAME,
+    Key: { 
+      id: messageId,
+      conversationId: conversationId
+    },
+    UpdateExpression: 'SET content = :content, isComplete = :isComplete',
+    ExpressionAttributeValues: {
+      ':content': content,
+      ':isComplete': isComplete
+    }
+  }).promise();
+  
+  // Return the update information for the subscription
+  return {
+    messageId,
+    conversationId,
+    content,
+    isComplete,
+    timestamp
+  };
 }

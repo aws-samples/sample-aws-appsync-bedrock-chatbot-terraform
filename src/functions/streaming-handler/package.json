@@ -1,0 +1,19 @@
+{
+  "name": "streaming-handler",
+  "version": "1.0.0",
+  "description": "Lambda function for streaming responses from Bedrock",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.414.0",
+    "@aws-sdk/client-dynamodb": "^3.414.0",
+    "@aws-sdk/lib-dynamodb": "^3.414.0",
+    "@aws-sdk/client-appsync": "^3.414.0",
+    "@aws-sdk/client-ssm": "^3.414.0",
+    "uuid": "^9.0.0"
+  }
+}
