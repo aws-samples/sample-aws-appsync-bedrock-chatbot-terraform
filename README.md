@@ -1,19 +1,30 @@
 # AWS GenAI Chatbot with AppSync, Lambda, DynamoDB, Bedrock, and Terraform
 
-This project demonstrates how to build a generative AI chatbot on AWS using AppSync, Lambda, DynamoDB, Amazon Bedrock, and Terraform. The architecture provides a scalable, serverless solution for creating AI-powered conversational experiences.
+This project demonstrates how to build a generative AI chatbot on AWS using AppSync, Lambda, DynamoDB, Amazon Bedrock, and Terraform. The architecture provides a scalable, serverless solution for creating AI-powered conversational experiences with real-time streaming responses.
 
 ## Architecture Overview
 
-![Architecture Diagram](https://via.placeholder.com/800x400?text=AWS+GenAI+Chatbot+Architecture)
+The project includes detailed architecture diagrams in the [architecture-diagram.md](architecture-diagram.md) file, which visualize the system components and data flow using Mermaid diagrams.
 
 The solution consists of the following components:
 
-- **AWS AppSync**: Provides the GraphQL API layer with real-time capabilities
-- **AWS Lambda**: Handles business logic and integration with Bedrock
+- **AWS AppSync**: Provides the GraphQL API layer with real-time capabilities and subscriptions
+- **AWS Lambda**: Handles business logic, integration with Bedrock, and streaming responses
 - **Amazon DynamoDB**: Stores chat history and conversation data
 - **Amazon Bedrock**: Provides the foundation model for AI capabilities
 - **Terraform**: Infrastructure as Code (IaC) for provisioning all resources
-- **React Frontend**: User interface for interacting with the chatbot
+- **React Frontend**: User interface for interacting with the chatbot with real-time updates
+
+## Key Features
+
+### Real-time Streaming Responses
+
+This chatbot implements a sophisticated streaming response mechanism that provides a more interactive user experience:
+
+- **Incremental Updates**: AI responses appear word-by-word in real-time as they're generated
+- **Subscription-based**: Uses AppSync subscriptions to push updates to the frontend
+- **Optimized UX**: Provides immediate feedback to users while the AI is generating responses
+- **Dedicated Lambda**: Uses a specialized streaming-handler Lambda function to process streaming responses from Bedrock
 
 ## Prerequisites
 
@@ -39,7 +50,8 @@ appsync-genai-terraform/
 ├── src/                        # Source code
 │   ├── functions/              # Lambda functions
 │   │   ├── message-handler/    # Message handling Lambda
-│   │   └── bedrock-client/     # Bedrock integration Lambda
+│   │   ├── bedrock-client/     # Bedrock integration Lambda
+│   │   └── streaming-handler/  # Streaming response handler Lambda
 │   └── schema/                 # GraphQL schema
 │       └── schema.graphql      # AppSync GraphQL schema
 ├── frontend/                   # React frontend application
@@ -199,9 +211,11 @@ The chatbot provides the following GraphQL operations:
 - **Mutations**:
   - `createConversation(title: String)`: Create a new conversation
   - `sendMessage(conversationId: ID!, content: String!)`: Send a message in a conversation
+  - `updateMessageContent(messageId: ID!, conversationId: ID!, content: String!, isComplete: Boolean!)`: Update message content for streaming responses
 
 - **Subscriptions**:
   - `onNewMessage(conversationId: ID!)`: Subscribe to new messages in a conversation
+  - `onMessageUpdate(conversationId: ID!)`: Subscribe to streaming updates for a message
 
 ### Example Usage
 
@@ -246,6 +260,37 @@ subscription OnNewMessage {
 }
 ```
 
+4. Subscribe to streaming message updates:
+
+```graphql
+subscription OnMessageUpdate {
+  onMessageUpdate(conversationId: "CONVERSATION_ID") {
+    messageId
+    conversationId
+    content
+    isComplete
+    timestamp
+  }
+}
+```
+
+### Testing Streaming Functionality
+
+To test the streaming functionality:
+
+1. Start the frontend application as described in the testing section
+2. Create a new conversation
+3. Send a message to the AI
+4. Observe how the AI response appears word-by-word in real-time
+5. The streaming continues until the complete response is generated
+
+You can also test the streaming functionality using the AppSync Console:
+
+1. Open the AppSync Console for your API
+2. Subscribe to the `onMessageUpdate` subscription for a specific conversation
+3. In another tab, send a message using the `sendMessage` mutation
+4. Observe the streaming updates in the subscription tab
+
 ## Deploying the Frontend to Production
 
 For production use, you can deploy the frontend to various hosting services:
@@ -263,12 +308,267 @@ For production use, you can deploy the frontend to various hosting services:
 3. Configure the bucket for static website hosting
 4. (Optional) Set up CloudFront for CDN distribution
 
+## Technical Implementation Details
+
+### GraphQL Schema
+
+The project uses a GraphQL schema with the following key types:
+
+```graphql
+type Message {
+  id: ID!
+  conversationId: ID!
+  content: String!
+  role: String!  # "user" or "assistant"
+  timestamp: AWSDateTime!
+  isComplete: Boolean  # Tracks streaming completion status
+}
+
+type MessageUpdate {
+  messageId: ID!
+  conversationId: ID!
+  content: String!
+  isComplete: Boolean!
+  timestamp: AWSDateTime!
+}
+
+type Subscription {
+  onNewMessage(conversationId: ID!): Message
+    @aws_subscribe(mutations: ["sendMessage"])
+  
+  onMessageUpdate(conversationId: ID!): MessageUpdate
+    @aws_subscribe(mutations: ["updateMessageContent"])
+}
+```
+
+The schema defines:
+- A `Message` type with an `isComplete` flag to track streaming status
+- A specialized `MessageUpdate` type for streaming updates
+- Subscriptions for both new messages and streaming updates
+
+### How Streaming Works
+
+The streaming functionality is implemented through several components working together:
+
+#### 1. Frontend Implementation
+
+The React frontend uses Apollo Client to handle GraphQL operations and subscriptions:
+
+```javascript
+// Subscribe to streaming message updates
+const { data: messageUpdateData } = useSubscription(ON_MESSAGE_UPDATE, {
+  variables: { conversationId: conversation.id },
+  onSubscriptionData: ({ subscriptionData, client }) => {
+    const update = subscriptionData.data.onMessageUpdate;
+    
+    // Update the UI with the streaming content
+    setMessages(prevMessages => {
+      // Find and update the message with the streaming content
+      const messageMap = new Map();
+      prevMessages.forEach(msg => {
+        messageMap.set(msg.id, msg);
+      });
+      
+      // Update the message with new content
+      if (messageMap.has(update.messageId)) {
+        const updatedMessage = {
+          ...messageMap.get(update.messageId),
+          content: update.content,
+          isComplete: update.isComplete
+        };
+        messageMap.set(update.messageId, updatedMessage);
+      }
+      
+      // Convert back to array and sort by timestamp
+      return Array.from(messageMap.values())
+        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    });
+  }
+});
+```
+
+The frontend maintains a local state of messages and updates the UI in real-time as streaming chunks arrive.
+
+#### 2. Message Handler Lambda
+
+When a user sends a message, the Message Handler Lambda:
+
+```javascript
+async function sendMessage(conversationId, content) {
+  // Store user message in DynamoDB
+  const userMessage = { 
+    id: uuidv4(), 
+    conversationId, 
+    content, 
+    role: 'user', 
+    timestamp: new Date().toISOString() 
+  };
+  await dynamodb.put({ TableName: MESSAGES_TABLE_NAME, Item: userMessage }).promise();
+  
+  // Create initial empty assistant message with isComplete=false
+  const assistantMessageId = uuidv4();
+  const assistantMessage = {
+    id: assistantMessageId,
+    conversationId,
+    content: "...", // Initial placeholder
+    role: 'assistant',
+    timestamp: new Date().toISOString(),
+    isComplete: false
+  };
+  await dynamodb.put({ TableName: MESSAGES_TABLE_NAME, Item: assistantMessage }).promise();
+  
+  // Invoke streaming handler asynchronously
+  await lambda.invoke({
+    FunctionName: process.env.STREAMING_HANDLER_FUNCTION,
+    InvocationType: 'Event', // Asynchronous invocation
+    Payload: JSON.stringify({
+      messageId: assistantMessageId,
+      conversationId,
+      messages: conversationHistory,
+      appsyncEndpoint,
+      appsyncApiKey
+    })
+  }).promise();
+  
+  // Return both messages
+  return { userMessage, assistantMessage };
+}
+```
+
+Key technical aspects:
+- Uses UUID v4 for generating unique message IDs
+- Creates an initial placeholder message before streaming begins
+- Asynchronously invokes the streaming handler to avoid blocking
+
+#### 3. Streaming Handler Lambda
+
+The Streaming Handler Lambda implements the streaming functionality using AWS SDK v3:
+
+```javascript
+// Invoke Bedrock model with streaming
+const response = await bedrockClient.send(new InvokeModelWithResponseStreamCommand({
+  modelId: BEDROCK_MODEL_ID,
+  contentType: 'application/json',
+  accept: 'application/json',
+  body: JSON.stringify(requestBody)
+}));
+
+// Process streaming response using async iteration
+let accumulatedContent = "";
+for await (const chunk of response.body) {
+  // Extract text from chunk
+  const tokenText = extractTextFromChunk(chunk);
+  if (tokenText) {
+    accumulatedContent += tokenText;
+    
+    // Update DynamoDB with incremental content
+    await updateMessageInDynamoDB(messageId, accumulatedContent, false, conversationId);
+    
+    // Publish update to AppSync
+    await publishToAppSync(messageId, conversationId, accumulatedContent, false, APPSYNC_ENDPOINT, APPSYNC_API_KEY);
+  }
+}
+
+// Mark as complete when done
+await updateMessageInDynamoDB(messageId, accumulatedContent, true, conversationId);
+await publishToAppSync(messageId, conversationId, accumulatedContent, true, APPSYNC_ENDPOINT, APPSYNC_API_KEY);
+```
+
+Technical implementation details:
+- Uses `InvokeModelWithResponseStreamCommand` from AWS SDK v3 for Bedrock streaming
+- Implements async iteration over the response stream
+- Processes each chunk to extract text content
+- Accumulates content incrementally
+- Updates DynamoDB and publishes to AppSync after each chunk
+
+#### 4. AppSync Integration
+
+The Streaming Handler Lambda publishes updates to AppSync using direct HTTP requests:
+
+```javascript
+async function publishToAppSync(messageId, conversationId, content, isComplete, appsyncEndpoint, appsyncApiKey) {
+  // Prepare the mutation
+  const mutation = `
+    mutation UpdateMessageContent($messageId: ID!, $conversationId: ID!, $content: String!, $isComplete: Boolean!) {
+      updateMessageContent(messageId: $messageId, conversationId: $conversationId, content: $content, isComplete: $isComplete) {
+        messageId
+        conversationId
+        content
+        isComplete
+        timestamp
+      }
+    }
+  `;
+  
+  const variables = { messageId, conversationId, content, isComplete };
+  
+  // Execute the mutation using HTTPS request
+  const requestBody = JSON.stringify({ query: mutation, variables });
+  const options = {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': appsyncApiKey
+    }
+  };
+  
+  // Send the request to AppSync
+  await makeHttpRequest(appsyncEndpoint, options, requestBody);
+}
+```
+
+This mutation triggers the `onMessageUpdate` subscription, which delivers the update to all subscribed clients.
+
+#### 5. DynamoDB Schema
+
+The DynamoDB schema is designed to efficiently support the streaming functionality:
+
+- **Messages Table**:
+  - Primary Key: `id` (UUID)
+  - Sort Key: `conversationId` (UUID)
+  - Attributes: `content`, `role`, `timestamp`, `isComplete`
+  - GSI: `ConversationIndex` on `conversationId` for efficient queries
+
+#### 6. Complete Streaming Data Flow
+
+1. User sends message via GraphQL mutation
+2. AppSync invokes Message Handler Lambda
+3. Message Handler:
+   - Stores user message in DynamoDB
+   - Creates empty assistant message with `isComplete=false`
+   - Asynchronously invokes Streaming Handler
+   - Returns to client immediately with the user message and empty assistant message
+
+4. Streaming Handler:
+   - Invokes Bedrock model with streaming enabled
+   - For each chunk received:
+     - Extracts text content
+     - Accumulates content
+     - Updates DynamoDB with current accumulated content
+     - Publishes update to AppSync via GraphQL mutation
+
+5. AppSync pushes updates to subscribed clients via WebSockets
+6. Frontend receives updates and renders them in real-time
+7. When streaming completes, message is marked as `isComplete=true`
+
+### Terraform Infrastructure
+
+The infrastructure is defined using Terraform modules:
+
+- **AppSync Module**: Defines the GraphQL API, schema, resolvers, and API key
+- **Lambda Module**: Defines the Lambda functions, IAM roles, and environment variables
+- **DynamoDB Module**: Defines the DynamoDB tables, indexes, and capacity settings
+- **IAM Module**: Defines the IAM roles and policies for the Lambda functions
+
+The Terraform configuration uses AWS provider version 4.x and follows best practices for modularization and variable management.
+
 ## Customization
 
 - **Bedrock Model**: You can change the Bedrock model by updating the `bedrock_model_id` variable in `terraform/variables.tf`.
 - **Region**: Update the AWS region in `terraform/variables.tf`.
 - **Table Configuration**: Modify the DynamoDB table settings in `terraform/modules/dynamodb/main.tf`.
 - **Frontend Styling**: Customize the frontend appearance by modifying the CSS files in `frontend/src/components/`.
+- **Streaming Behavior**: Adjust the streaming behavior by modifying the `streaming-handler/index.js` file.
 
 ## Cleanup
 
