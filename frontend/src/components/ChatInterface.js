@@ -21,46 +21,14 @@ function ChatInterface({ conversation }) {
   // Mutation to send a new message
   const [sendMessage] = useMutation(SEND_MESSAGE, {
     onCompleted: (data) => {
-      setMessageInput('');
+      // We've already cleared the input field and added a temporary user message
+      // Just need to update the sending state
       setIsSending(false);
       
       // Log the sent message
       console.log('Message sent successfully:', data.sendMessage);
       
-      // Get the current messages from state
-      const currentMessages = [...messages];
-      
-      // Add the user message to our local state directly
-      // This ensures the user message appears immediately
-      const userMessage = Array.isArray(data.sendMessage) ? data.sendMessage[0] : data.sendMessage;
-      
-      // Add the user message to our local state directly using the functional state update
-      // This ensures we're working with the latest state
-      console.log('Adding user message to local state:', userMessage);
-      setMessages(prevMessages => {
-        // Check if the message already exists in our state
-        const messageExists = prevMessages.some(msg => msg.id === userMessage.id);
-        if (!messageExists) {
-          // Create a map of message IDs to messages for easy lookup
-          const messageMap = new Map();
-          
-          // First add all existing messages to the map
-          prevMessages.forEach(msg => {
-            messageMap.set(msg.id, msg);
-          });
-          
-          // Then add the new user message
-          messageMap.set(userMessage.id, userMessage);
-          
-          // Convert back to array and sort by timestamp
-          const mergedMessages = Array.from(messageMap.values())
-            .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-          
-          console.log('Merged messages with new user message:', mergedMessages);
-          return mergedMessages;
-        }
-        return prevMessages;
-      });
+      // We're keeping the temporary user message, no need to replace it
       
       // Create a placeholder assistant message with a timestamp
       const now = Date.now();
@@ -144,33 +112,17 @@ function ChatInterface({ conversation }) {
           
           const getMessages = currentData?.getMessages || [];
           
-          // Handle both single message and array of messages
+          // We don't need to update the cache with the user message
+          // since we've already added it to the state in handleSendMessage
+          // This update callback is mainly for the server to acknowledge the message
+          
+          // Log the server response for debugging
           const messages = Array.isArray(data.sendMessage) ? data.sendMessage : [data.sendMessage];
-          console.log('Messages from sendMessage mutation:', messages);
+          console.log('Server acknowledged messages:', messages);
           
-          // Add each message to the cache if it doesn't already exist
-          let updatedMessages = [...getMessages];
-          messages.forEach(message => {
-            // Check if the message already exists in the cache
-            const messageExists = getMessages.some(msg => msg.id === message.id);
-            
-            // If it's a new message, add it to the cache
-            if (!messageExists) {
-              console.log('Adding message to cache:', message);
-              updatedMessages.push(message);
-            }
-          });
-          
-          // Update the cache with all messages
-          cache.writeQuery({
-            query: GET_MESSAGES,
-            variables: { conversationId: conversation.id },
-            data: {
-              getMessages: updatedMessages
-            }
-          });
+          // We're keeping our temporary user messages, no need to update the cache
         } catch (error) {
-          console.error('Error updating cache with messages:', error);
+          console.error('Error in update callback:', error);
         }
       }
     }
@@ -590,10 +542,49 @@ function ChatInterface({ conversation }) {
     if (!messageInput.trim() || isSending) return;
 
     setIsSending(true);
+    
+    // Create a temporary user message to display immediately
+    const tempUserMessage = {
+      id: `temp-user-${Date.now()}`,
+      conversationId: conversation.id,
+      content: messageInput,
+      role: 'user',
+      timestamp: new Date().toISOString(),
+      isComplete: true
+    };
+    
+    // Add the user message to the state immediately
+    console.log('Adding temporary user message to local state:', tempUserMessage);
+    setMessages(prevMessages => {
+      // Create a map of message IDs to messages for easy lookup
+      const messageMap = new Map();
+      
+      // First add all existing messages to the map
+      prevMessages.forEach(msg => {
+        messageMap.set(msg.id, msg);
+      });
+      
+      // Then add the new user message
+      messageMap.set(tempUserMessage.id, tempUserMessage);
+      
+      // Convert back to array and sort by timestamp
+      const mergedMessages = Array.from(messageMap.values())
+        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      
+      return mergedMessages;
+    });
+    
+    // Store the message input before clearing it
+    const sentMessageContent = messageInput;
+    
+    // Clear the input field immediately for better UX
+    setMessageInput('');
+    
+    // Then send the message to the server
     sendMessage({
       variables: {
         conversationId: conversation.id,
-        content: messageInput
+        content: sentMessageContent
       }
     });
   };
