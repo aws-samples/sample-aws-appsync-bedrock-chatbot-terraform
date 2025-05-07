@@ -601,7 +601,11 @@ function ChatInterface({ conversation }) {
   // Update messages state when data changes
   useEffect(() => {
     if (data?.getMessages) {
-      setMessages(data.getMessages);
+      // Sort messages by timestamp before setting to state
+      const sortedMessages = [...data.getMessages].sort(
+        (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+      );
+      setMessages(sortedMessages);
     }
   }, [data]);
   

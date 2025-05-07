@@ -46,7 +46,10 @@ function ConversationList({ onSelectConversation, selectedConversationId }) {
   if (loading) return <div className="loading">Loading conversations...</div>;
   if (error) return <div className="error">Error loading conversations: {error.message}</div>;
 
-  const conversations = data?.listConversations || [];
+  // Sort conversations by updatedAt timestamp in descending order (newest first)
+  const conversations = [...(data?.listConversations || [])].sort((a, b) => 
+    new Date(b.updatedAt) - new Date(a.updatedAt)
+  );
 
   return (
     <div className="conversation-list">
