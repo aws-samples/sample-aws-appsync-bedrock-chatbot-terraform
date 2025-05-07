@@ -777,6 +777,11 @@ cd terraform
 terraform destroy
 ```
 
+## Security
+
+See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This library is licensed under the MIT-0 License. See the LICENSE file.
+
