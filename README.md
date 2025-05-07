@@ -4,7 +4,51 @@ This project demonstrates how to build a generative AI chatbot on AWS using AppS
 
 ## Architecture Overview
 
-The project includes detailed architecture diagrams in the [architecture-diagram.md](architecture-diagram.md) file, which visualize the system components and data flow using Mermaid diagrams.
+### System Architecture
+
+```mermaid
+flowchart TD
+    Client[Client Application] <--> AppSync[AWS AppSync GraphQL API]
+    
+    subgraph "API Layer"
+        AppSync --> MessageHandler[Lambda: Message Handler]
+        AppSync --> Subscriptions[Real-time Subscriptions]
+        Subscriptions --> Client
+    end
+    
+    subgraph "Business Logic"
+        MessageHandler --> StreamingHandler[Lambda: Streaming Handler]
+        MessageHandler --> BedrockClient[Lambda: Bedrock Client]
+        StreamingHandler --> Bedrock[Amazon Bedrock]
+        BedrockClient --> Bedrock
+    end
+    
+    subgraph "Data Layer"
+        MessageHandler --> MessagesTable[DynamoDB: Messages Table]
+        MessageHandler --> ConversationsTable[DynamoDB: Conversations Table]
+        StreamingHandler --> MessagesTable
+    end
+    
+    StreamingHandler --> AppSync
+    
+    Terraform[Terraform IaC] -.-> AppSync
+    Terraform -.-> MessageHandler
+    Terraform -.-> BedrockClient
+    Terraform -.-> StreamingHandler
+    Terraform -.-> MessagesTable
+    Terraform -.-> ConversationsTable
+    
+    style Client fill:#f9f,stroke:#333,stroke-width:2px
+    style AppSync fill:#bbf,stroke:#333,stroke-width:2px
+    style MessageHandler fill:#bfb,stroke:#333,stroke-width:2px
+    style BedrockClient fill:#bfb,stroke:#333,stroke-width:2px
+    style StreamingHandler fill:#bfb,stroke:#333,stroke-width:2px
+    style Bedrock fill:#fbb,stroke:#333,stroke-width:2px
+    style MessagesTable fill:#ffd,stroke:#333,stroke-width:2px
+    style ConversationsTable fill:#ffd,stroke:#333,stroke-width:2px
+    style Terraform fill:#ddf,stroke:#333,stroke-width:2px
+    style Subscriptions fill:#bbf,stroke:#333,stroke-width:2px
+```
 
 The solution consists of the following components:
 
@@ -75,6 +119,8 @@ For detailed deployment instructions, please refer to the [Deployment Guide](dep
 git clone https://github.com/yourusername/appsync-genai-terraform.git
 cd appsync-genai-terraform
 ```
+
+> **Note:** Replace `yourusername` with your actual GitHub username if you've forked this repository, or use the actual repository URL.
 
 2. **Install dependencies for Lambda functions**
 
@@ -189,12 +235,13 @@ aws dynamodb scan --table-name $(terraform -chdir=terraform output -raw dynamodb
 aws dynamodb scan --table-name $(terraform -chdir=terraform output -raw dynamodb_messages_table_name)
 ```
 
-### Option 5: Using CloudWatch Logs for Debugging
+### Option 6: Using CloudWatch Logs for Debugging
 
 1. Go to AWS CloudWatch in the console
 2. Navigate to "Log groups"
 3. Find logs for your Lambda functions:
    - `/aws/lambda/message-handler-function`
+   - `/aws/lambda/streaming-handler-function`
    - `/aws/lambda/bedrock-client-function`
 4. Review logs for any errors or issues
 
@@ -239,10 +286,19 @@ mutation SendMessage {
     conversationId: "CONVERSATION_ID",
     content: "Tell me about AWS AppSync"
   ) {
-    id
-    content
-    role
-    timestamp
+    userMessage {
+      id
+      content
+      role
+      timestamp
+    }
+    assistantMessage {
+      id
+      content
+      role
+      timestamp
+      isComplete
+    }
   }
 }
 ```
@@ -523,13 +579,83 @@ This mutation triggers the `onMessageUpdate` subscription, which delivers the up
 
 The DynamoDB schema is designed to efficiently support the streaming functionality:
 
+```mermaid
+erDiagram
+    CONVERSATION {
+        string id "Partition Key"
+        string title
+        string createdAt
+        string updatedAt
+    }
+    MESSAGE {
+        string id "Partition Key"
+        string conversationId "Sort Key"
+        string content
+        string role
+        string timestamp
+        boolean isComplete
+    }
+    CONVERSATION ||--o{ MESSAGE : contains
+```
+
+- **Conversations Table**:
+  - Partition Key: `id` (UUID)
+  - Billing Mode: On-demand (PAY_PER_REQUEST)
+  - Non-key attributes (handled at application level): `title`, `createdAt`, `updatedAt`
+
 - **Messages Table**:
-  - Primary Key: `id` (UUID)
+  - Partition Key: `id` (UUID)
   - Sort Key: `conversationId` (UUID)
-  - Attributes: `content`, `role`, `timestamp`, `isComplete`
-  - GSI: `ConversationIndex` on `conversationId` for efficient queries
+  - Global Secondary Index: `ConversationIndex` with hash key `conversationId` and projection_type "ALL"
+  - Billing Mode: On-demand (PAY_PER_REQUEST)
+  - Non-key attributes (handled at application level): `content`, `role`, `timestamp`, `isComplete`
+
+Note: DynamoDB is schemaless for non-key attributes, meaning attributes like `content`, `role`, etc. are defined and managed at the application level rather than in the database schema itself.
 
 #### 6. Complete Streaming Data Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant AppSync as AWS AppSync
+    participant MessageHandler as Lambda: Message Handler
+    participant StreamingHandler as Lambda: Streaming Handler
+    participant BedrockClient as Lambda: Bedrock Client
+    participant Bedrock as Amazon Bedrock
+    participant DynamoDB
+    
+    Client->>AppSync: sendMessage mutation
+    AppSync->>MessageHandler: Invoke Lambda resolver
+    MessageHandler->>DynamoDB: Store user message
+    
+    Note over MessageHandler,StreamingHandler: For standard responses
+    MessageHandler->>BedrockClient: Request AI response
+    BedrockClient->>Bedrock: Invoke model
+    Bedrock-->>BedrockClient: AI-generated response
+    BedrockClient-->>MessageHandler: Return response
+    MessageHandler->>DynamoDB: Store AI response
+    
+    Note over MessageHandler,StreamingHandler: For streaming responses
+    MessageHandler->>DynamoDB: Create initial empty assistant message
+    MessageHandler->>StreamingHandler: Invoke asynchronously
+    MessageHandler-->>AppSync: Return user message
+    AppSync->>Client: Return user message
+    
+    StreamingHandler->>Bedrock: Invoke model with streaming
+    
+    loop For each chunk of the response
+        Bedrock-->>StreamingHandler: Stream response chunk
+        StreamingHandler->>DynamoDB: Update message content incrementally
+        StreamingHandler->>AppSync: Publish updateMessageContent mutation
+        AppSync->>Client: Push update via onMessageUpdate subscription
+    end
+    
+    StreamingHandler->>DynamoDB: Mark message as complete (isComplete=true)
+    StreamingHandler->>AppSync: Publish final updateMessageContent
+    AppSync->>Client: Push final update via subscription
+```
+
+The streaming data flow follows these steps:
 
 1. User sends message via GraphQL mutation
 2. AppSync invokes Message Handler Lambda
@@ -550,6 +676,78 @@ The DynamoDB schema is designed to efficiently support the streaming functionali
 5. AppSync pushes updates to subscribed clients via WebSockets
 6. Frontend receives updates and renders them in real-time
 7. When streaming completes, message is marked as `isComplete=true`
+
+#### 7. Subscription Flow
+
+```mermaid
+flowchart TD
+    subgraph "Client Application"
+        UserMessage[User sends message]
+        DisplayUserMessage[Display user message]
+        DisplayTyping[Display typing indicator]
+        DisplayStreamingResponse[Display streaming response]
+        DisplayFinalResponse[Display final response]
+    end
+    
+    subgraph "AppSync API"
+        SendMessageMutation[sendMessage mutation]
+        OnNewMessageSub[onNewMessage subscription]
+        OnMessageUpdateSub[onMessageUpdate subscription]
+    end
+    
+    subgraph "Lambda Functions"
+        MessageHandler[Message Handler]
+        StreamingHandler[Streaming Handler]
+    end
+    
+    subgraph "DynamoDB"
+        StoreUserMessage[Store user message]
+        CreateEmptyResponse[Create empty assistant message]
+        UpdateMessageContent[Update message content]
+        MarkComplete[Mark message as complete]
+    end
+    
+    UserMessage --> SendMessageMutation
+    SendMessageMutation --> MessageHandler
+    MessageHandler --> StoreUserMessage
+    MessageHandler --> CreateEmptyResponse
+    MessageHandler --> StreamingHandler
+    
+    OnNewMessageSub --> DisplayUserMessage
+    
+    StreamingHandler --> UpdateMessageContent
+    UpdateMessageContent --> OnMessageUpdateSub
+    OnMessageUpdateSub --> DisplayStreamingResponse
+    
+    StreamingHandler --> MarkComplete
+    MarkComplete --> OnMessageUpdateSub
+    OnMessageUpdateSub --> DisplayFinalResponse
+    
+    style UserMessage fill:#f9f,stroke:#333,stroke-width:2px
+    style SendMessageMutation fill:#bbf,stroke:#333,stroke-width:2px
+    style OnNewMessageSub fill:#bbf,stroke:#333,stroke-width:2px
+    style OnMessageUpdateSub fill:#bbf,stroke:#333,stroke-width:2px
+    style MessageHandler fill:#bfb,stroke:#333,stroke-width:2px
+    style StreamingHandler fill:#bfb,stroke:#333,stroke-width:2px
+    style StoreUserMessage fill:#ffd,stroke:#333,stroke-width:2px
+    style CreateEmptyResponse fill:#ffd,stroke:#333,stroke-width:2px
+    style UpdateMessageContent fill:#ffd,stroke:#333,stroke-width:2px
+    style MarkComplete fill:#ffd,stroke:#333,stroke-width:2px
+    style DisplayUserMessage fill:#f9f,stroke:#333,stroke-width:2px
+    style DisplayTyping fill:#f9f,stroke:#333,stroke-width:2px
+    style DisplayStreamingResponse fill:#f9f,stroke:#333,stroke-width:2px
+    style DisplayFinalResponse fill:#f9f,stroke:#333,stroke-width:2px
+```
+
+This diagram illustrates how the subscription flow works in the frontend application:
+
+1. User sends a message which triggers the `sendMessage` mutation
+2. The message handler processes the request and creates necessary database entries
+3. The `onNewMessage` subscription delivers the user message to the client
+4. The streaming handler processes the AI response in chunks
+5. Each chunk update triggers the `onMessageUpdate` subscription
+6. The client displays the streaming response in real-time
+7. When the response is complete, the final update is delivered and displayed
 
 ### Terraform Infrastructure
 
