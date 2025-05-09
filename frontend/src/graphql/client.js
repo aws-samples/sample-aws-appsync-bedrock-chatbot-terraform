@@ -51,16 +51,33 @@ const client = new ApolloClient({
       Query: {
         fields: {
           getMessages: {
+            // Specify which arguments are used to generate the cache key
+            keyArgs: ["conversationId"],
             // Merge function for getMessages query
-            merge(existing = [], incoming) {
+            merge(existing = [], incoming, { args }) {
+              console.log('Merging messages for conversation:', args?.conversationId);
+              console.log('Existing messages:', existing.length);
+              console.log('Incoming messages:', incoming.length);
+              
+              // Only merge messages for the same conversation
+              if (!args || !args.conversationId) {
+                console.log('No conversation ID provided, returning incoming data');
+                return incoming;
+              }
+              
               // Create a map of existing messages by ID for quick lookup
               const existingMap = new Map();
               existing.forEach(msg => {
-                existingMap.set(msg.id, msg);
+                // Ensure we're only merging messages from the same conversation
+                if (msg.conversationId === args.conversationId) {
+                  existingMap.set(msg.id, msg);
+                }
               });
               
-              // Merge incoming messages, avoiding duplicates
-              const merged = [...existing];
+              // Start with messages from the current conversation only
+              const merged = existing.filter(msg => msg.conversationId === args.conversationId);
+              
+              // Add incoming messages, avoiding duplicates
               incoming.forEach(msg => {
                 if (!existingMap.has(msg.id)) {
                   merged.push(msg);
@@ -68,9 +85,12 @@ const client = new ApolloClient({
               });
               
               // Sort by timestamp to ensure chronological order
-              return merged.sort((a, b) => {
+              const sorted = merged.sort((a, b) => {
                 return new Date(a.timestamp) - new Date(b.timestamp);
               });
+              
+              console.log('Merged and sorted messages:', sorted.length);
+              return sorted;
             }
           }
         }

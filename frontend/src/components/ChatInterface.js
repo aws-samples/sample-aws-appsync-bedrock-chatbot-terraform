@@ -11,6 +11,24 @@ function ChatInterface({ conversation }) {
   const [messages, setMessages] = useState([]);
   const messagesEndRef = useRef(null);
   const client = useApolloClient();
+  
+  // Store the current conversation ID in a ref to detect changes
+  const previousConversationIdRef = useRef(conversation?.id);
+  
+  // Clear messages when conversation changes
+  useEffect(() => {
+    // Check if conversation ID has changed
+    if (previousConversationIdRef.current !== conversation.id) {
+      console.log('Conversation changed from', previousConversationIdRef.current, 'to', conversation.id);
+      console.log('Clearing messages state for new conversation');
+      
+      // Clear the messages state
+      setMessages([]);
+      
+      // Update the ref with the new conversation ID
+      previousConversationIdRef.current = conversation.id;
+    }
+  }, [conversation.id]);
 
   // Query to fetch messages for the current conversation
   const { loading, error, data, refetch } = useQuery(GET_MESSAGES, {
@@ -589,18 +607,59 @@ function ChatInterface({ conversation }) {
     });
   };
 
-  // Update messages state when data changes
+  // Update messages state when data changes - improved to merge with existing messages
   useEffect(() => {
     if (data?.getMessages) {
-      // Sort messages by timestamp before setting to state
-      const sortedMessages = [...data.getMessages].sort(
-        (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
-      );
-      setMessages(sortedMessages);
+      // Enhanced logging to debug message display issues
+      console.log('Received messages from query:', {
+        count: data.getMessages.length,
+        messages: data.getMessages.map(msg => ({
+          id: msg.id,
+          role: msg.role,
+          contentPreview: msg.content ? (msg.content.length > 20 ? msg.content.substring(0, 20) + '...' : msg.content) : null,
+          timestamp: msg.timestamp,
+          isComplete: msg.isComplete
+        }))
+      });
+      
+      // Merge with existing messages instead of replacing
+      setMessages(prevMessages => {
+        // Create a map of message IDs to messages for easy lookup
+        const messageMap = new Map();
+        
+        // First add all existing messages to the map
+        prevMessages.forEach(msg => {
+          messageMap.set(msg.id, msg);
+        });
+        
+        // Then add or update with messages from the query
+        data.getMessages.forEach(msg => {
+          // Only update if the message doesn't exist or if it's more complete
+          if (!messageMap.has(msg.id) || 
+              (messageMap.get(msg.id).isComplete === false && msg.isComplete === true)) {
+            messageMap.set(msg.id, msg);
+          }
+        });
+        
+        // Convert back to array and sort by timestamp
+        const mergedMessages = Array.from(messageMap.values())
+          .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        
+        console.log('Merged messages after query update:', {
+          count: mergedMessages.length,
+          byRole: {
+            user: mergedMessages.filter(msg => msg.role === 'user').length,
+            assistant: mergedMessages.filter(msg => msg.role === 'assistant').length
+          },
+          placeholders: mergedMessages.filter(msg => msg.id.startsWith('placeholder-')).length
+        });
+        
+        return mergedMessages;
+      });
     }
   }, [data]);
   
-  // Debug effect to monitor message content changes
+  // Debug effect to monitor message content changes and log all messages
   useEffect(() => {
     if (messages.length > 0) {
       const assistantMessages = messages.filter(msg => msg.role === 'assistant');
@@ -613,6 +672,22 @@ function ChatInterface({ conversation }) {
           timestamp: new Date().toISOString()
         });
       }
+      
+      // Log all messages for debugging
+      console.log("Current messages in state:", {
+        count: messages.length,
+        byRole: {
+          user: messages.filter(msg => msg.role === 'user').length,
+          assistant: messages.filter(msg => msg.role === 'assistant').length
+        },
+        messages: messages.map(msg => ({
+          id: msg.id,
+          role: msg.role,
+          contentPreview: msg.content ? (msg.content.length > 20 ? msg.content.substring(0, 20) + '...' : msg.content) : null,
+          timestamp: msg.timestamp,
+          isComplete: msg.isComplete
+        }))
+      });
     }
   }, [messages.map(msg => msg.role === 'assistant' ? msg.content : null).join('|')]);
   
@@ -634,49 +709,68 @@ function ChatInterface({ conversation }) {
     }
   }, []);
   
-  // Cleanup effect to remove placeholder messages when we have complete messages
+  // Improved cleanup effect to remove only empty placeholder messages
   useEffect(() => {
     // Only run this cleanup if we have messages
     if (messages.length === 0) return;
     
-    // Check if we have any placeholder messages
-    const hasPlaceholders = messages.some(msg => 
-      msg.id.startsWith('placeholder-') && msg.content === "..."
+    // Check if we have any empty placeholder messages
+    const emptyPlaceholders = messages.filter(msg => 
+      msg.id.startsWith('placeholder-') && 
+      msg.content === "..." &&
+      msg.role === 'assistant'
     );
     
-    // Check if we have any complete assistant messages
-    const hasCompleteMessages = messages.some(msg => 
-      msg.role === 'assistant' && !msg.id.startsWith('placeholder-') && msg.isComplete
-    );
-    
-    // If we have both placeholders and complete messages, clean up the placeholders
-    if (hasPlaceholders && hasCompleteMessages) {
-      console.log('Cleaning up placeholder messages');
-      
-      // Filter out placeholder messages
-      const cleanedMessages = messages.filter(msg => 
-        // Keep all non-placeholder messages
-        !msg.id.startsWith('placeholder-') || 
-        // Or keep placeholders that aren't just "..."
-        (msg.id.startsWith('placeholder-') && msg.content !== "...")
+    // Check if we have any complete assistant messages that were created after the placeholders
+    if (emptyPlaceholders.length > 0) {
+      const completeMessages = messages.filter(msg => 
+        msg.role === 'assistant' && 
+        !msg.id.startsWith('placeholder-') && 
+        msg.isComplete === true
       );
       
-      // Update our state with the cleaned messages
-      if (cleanedMessages.length !== messages.length) {
-        console.log('Removed placeholder messages:', messages.length - cleanedMessages.length);
-        setMessages(cleanedMessages);
+      // Only remove placeholders if we have complete messages that came after them
+      if (completeMessages.length > 0) {
+        console.log('Found complete messages that can replace placeholders:', 
+          completeMessages.length, 'complete messages,', emptyPlaceholders.length, 'placeholders');
         
-        // Also update the cache
-        try {
-          client.writeQuery({
-            query: GET_MESSAGES,
-            variables: { conversationId: conversation.id },
-            data: {
-              getMessages: cleanedMessages
-            }
+        // For each placeholder, check if there's a newer complete message
+        const placeholdersToRemove = emptyPlaceholders.filter(placeholder => {
+          const placeholderTime = new Date(placeholder.timestamp).getTime();
+          
+          // Check if there's a complete message that was created after this placeholder
+          return completeMessages.some(complete => {
+            const completeTime = new Date(complete.timestamp).getTime();
+            return completeTime > placeholderTime;
           });
-        } catch (error) {
-          console.error('Error updating cache with cleaned messages:', error);
+        });
+        
+        if (placeholdersToRemove.length > 0) {
+          console.log('Removing', placeholdersToRemove.length, 'placeholder messages that have been replaced');
+          
+          // Create a new array without the placeholders to remove
+          const cleanedMessages = messages.filter(msg => 
+            !placeholdersToRemove.some(placeholder => placeholder.id === msg.id)
+          );
+          
+          // Update our state with the cleaned messages
+          if (cleanedMessages.length !== messages.length) {
+            console.log('Removed placeholder messages:', messages.length - cleanedMessages.length);
+            setMessages(cleanedMessages);
+            
+            // Also update the cache
+            try {
+              client.writeQuery({
+                query: GET_MESSAGES,
+                variables: { conversationId: conversation.id },
+                data: {
+                  getMessages: cleanedMessages
+                }
+              });
+            } catch (error) {
+              console.error('Error updating cache with cleaned messages:', error);
+            }
+          }
         }
       }
     }
