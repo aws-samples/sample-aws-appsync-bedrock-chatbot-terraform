@@ -18,19 +18,25 @@ function MessageBubble({ message }) {
   // Check if this is a placeholder message (just "...")
   const isPlaceholder = message.role === 'assistant' && 
                         message.content === "..." && 
-                        message.id.startsWith('placeholder-');
+                        message.id && message.id.startsWith('placeholder-');
   
   // Log for debugging
   console.log('MessageBubble rendering:', {
-    id: message.id,
-    content: message.content,
+    id: message.id || 'undefined-id',
+    content: message.content || 'undefined-content',
     contentLength: message.content ? message.content.length : 0,
     isComplete: message.isComplete
   });
 
   // Don't render placeholder messages if they should be hidden
   if (isPlaceholder) {
-    console.log('Skipping render of placeholder message:', message.id);
+    console.log('Skipping render of placeholder message:', message.id || 'undefined-id');
+    return null;
+  }
+  
+  // Safety check for undefined message properties
+  if (!message || !message.content) {
+    console.log('Skipping render of invalid message:', message);
     return null;
   }
 
@@ -60,14 +66,25 @@ function MessageBubble({ message }) {
 
 // Use React.memo to prevent unnecessary re-renders
 export default React.memo(MessageBubble, (prevProps, nextProps) => {
+  // Safety check for undefined messages
+  if (!prevProps.message || !nextProps.message) {
+    console.log('MessageBubble comparison received undefined message');
+    return false; // Re-render to be safe
+  }
+  
   // Only re-render if content or completion status changes
-  const contentChanged = prevProps.message.content !== nextProps.message.content;
-  const completeChanged = prevProps.message.isComplete !== nextProps.message.isComplete;
+  const prevContent = prevProps.message.content || '';
+  const nextContent = nextProps.message.content || '';
+  const contentChanged = prevContent !== nextContent;
+  
+  const prevComplete = prevProps.message.isComplete;
+  const nextComplete = nextProps.message.isComplete;
+  const completeChanged = prevComplete !== nextComplete;
   
   if (contentChanged || completeChanged) {
     console.log('MessageBubble will re-render:', {
-      prevContent: prevProps.message.content,
-      nextContent: nextProps.message.content,
+      prevContent,
+      nextContent,
       contentChanged,
       completeChanged
     });

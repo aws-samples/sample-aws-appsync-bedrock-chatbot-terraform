@@ -69,6 +69,11 @@ const MessageList = forwardRef(({ messages, onScroll }, ref) => {
     
     // Add all messages to the map
     messages.forEach(message => {
+      // Skip undefined messages or messages without IDs
+      if (!message || !message.id) {
+        console.log('Skipping undefined message or message without ID in MessageList');
+        return;
+      }
       newMap.set(message.id, message);
     });
     
@@ -78,7 +83,7 @@ const MessageList = forwardRef(({ messages, onScroll }, ref) => {
     // Force a re-render only if the message IDs have changed
     // This prevents unnecessary re-renders when only content changes
     const currentIds = Array.from(messageMapRef.current.keys()).join(',');
-    const newIds = messages.map(m => m.id).join(',');
+    const newIds = messages.filter(m => m && m.id).map(m => m.id).join(',');
     
     if (currentIds !== newIds) {
       console.log("Message IDs changed, forcing re-render");
@@ -119,19 +124,29 @@ const MessageList = forwardRef(({ messages, onScroll }, ref) => {
     checkShouldAutoScroll
   }));
   
+  // Filter out any undefined messages or messages without IDs
+  const validMessages = messages.filter(msg => msg && msg.id);
+  
+  // Log any invalid messages that were filtered out
+  if (validMessages.length < messages.length) {
+    console.warn('MessageList filtered out invalid messages:', 
+      messages.length - validMessages.length, 
+      'messages were undefined or missing IDs');
+  }
+  
   return (
     <div 
       className="messages-container" 
       ref={containerRef}
       key={`message-list-${updateCounter}`}
     >
-      {messages.length === 0 ? (
+      {validMessages.length === 0 ? (
         <div className="empty-chat">
           <p>No messages yet. Start the conversation!</p>
         </div>
       ) : (
         <div className="messages">
-          {messages.map((message) => (
+          {validMessages.map((message) => (
             <MessageBubble 
               key={`${message.id}-${message.content?.length || 0}-${message.isComplete ? 'complete' : 'incomplete'}`} 
               message={message} 

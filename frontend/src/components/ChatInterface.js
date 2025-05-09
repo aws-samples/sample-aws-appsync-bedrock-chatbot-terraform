@@ -15,7 +15,7 @@ function ChatInterface({ conversation }) {
   // Store the current conversation ID in a ref to detect changes
   const previousConversationIdRef = useRef(conversation?.id);
   
-  // Clear messages when conversation changes
+  // Clear messages and reset cache when conversation changes
   useEffect(() => {
     // Check if conversation ID has changed
     if (previousConversationIdRef.current !== conversation.id) {
@@ -25,10 +25,40 @@ function ChatInterface({ conversation }) {
       // Clear the messages state
       setMessages([]);
       
+      // Reset the Apollo cache for this conversation to prevent duplicates
+      try {
+        // Read the current cache for the new conversation
+        const currentData = client.cache.readQuery({
+          query: GET_MESSAGES,
+          variables: { conversationId: conversation.id }
+        });
+        
+        if (currentData) {
+          // Write back only server-generated messages (not temporary ones)
+          // This filters out any temporary messages that might cause duplicates
+          const serverMessages = currentData.getMessages.filter(msg => 
+            msg && msg.id && !msg.id.startsWith('temp-user-') && !msg.id.startsWith('placeholder-')
+          );
+          
+          console.log('Resetting cache with server messages only:', serverMessages.length);
+          
+          // Update the cache with only server messages
+          client.cache.writeQuery({
+            query: GET_MESSAGES,
+            variables: { conversationId: conversation.id },
+            data: {
+              getMessages: serverMessages
+            }
+          });
+        }
+      } catch (error) {
+        console.log('No existing cache for this conversation, starting fresh');
+      }
+      
       // Update the ref with the new conversation ID
       previousConversationIdRef.current = conversation.id;
     }
-  }, [conversation.id]);
+  }, [conversation.id, client.cache]);
 
   // Query to fetch messages for the current conversation
   const { loading, error, data, refetch } = useQuery(GET_MESSAGES, {
@@ -389,14 +419,20 @@ function ChatInterface({ conversation }) {
           
           // Remove any duplicate messages and placeholders when we have a complete message
           const uniqueMessages = newMessages.filter((msg, idx, self) => {
+            // Skip undefined messages or messages without IDs
+            if (!msg || !msg.id) {
+              console.log('Skipping undefined message or message without ID in uniqueMessages filter');
+              return false;
+            }
+            
             // If this is a placeholder and we have a complete message with the same content or from the same update, remove it
             if (msg.id.startsWith('placeholder-')) {
               // Check if we have a complete message that should replace this placeholder
               const hasCompleteMessage = self.some(m => 
-                !m.id.startsWith('placeholder-') && 
+                m && m.id && !m.id.startsWith('placeholder-') && 
                 m.role === 'assistant' && 
                 (m.id === update.messageId || 
-                 (update.isComplete && m.content.includes(msg.content.replace('...', ''))))
+                 (update.isComplete && m.content && msg.content && m.content.includes(msg.content.replace('...', ''))))
               );
               
               if (hasCompleteMessage) {
@@ -406,7 +442,7 @@ function ChatInterface({ conversation }) {
             }
             
             // Keep unique messages based on ID
-            return idx === self.findIndex(m => m.id === msg.id);
+            return idx === self.findIndex(m => m && m.id && m.id === msg.id);
           });
           
           console.log('Updating message in cache with ID:', updatedMessage.id);
@@ -607,13 +643,23 @@ function ChatInterface({ conversation }) {
     });
   };
 
-  // Update messages state when data changes - improved to merge with existing messages
+  // Update messages state when data changes - improved to handle duplicates
   useEffect(() => {
     if (data?.getMessages) {
+      // Filter out any undefined messages or messages without IDs
+      const validMessages = data.getMessages.filter(msg => msg && msg.id);
+      
+      // Log any invalid messages that were filtered out
+      if (validMessages.length < data.getMessages.length) {
+        console.warn('Filtered out invalid messages:', 
+          data.getMessages.length - validMessages.length, 
+          'messages were undefined or missing IDs');
+      }
+      
       // Enhanced logging to debug message display issues
       console.log('Received messages from query:', {
-        count: data.getMessages.length,
-        messages: data.getMessages.map(msg => ({
+        count: validMessages.length,
+        messages: validMessages.map(msg => ({
           id: msg.id,
           role: msg.role,
           contentPreview: msg.content ? (msg.content.length > 20 ? msg.content.substring(0, 20) + '...' : msg.content) : null,
@@ -622,22 +668,80 @@ function ChatInterface({ conversation }) {
         }))
       });
       
-      // Merge with existing messages instead of replacing
+      // Merge with existing messages instead of replacing, with improved deduplication
       setMessages(prevMessages => {
+        // Filter out any undefined messages from previous messages
+        const validPrevMessages = prevMessages.filter(msg => msg && msg.id);
+        
         // Create a map of message IDs to messages for easy lookup
         const messageMap = new Map();
         
-        // First add all existing messages to the map
-        prevMessages.forEach(msg => {
-          messageMap.set(msg.id, msg);
+        // Create a map of temporary user messages by content and approximate time
+        // This will help us match temporary messages with their server counterparts
+        const tempUserMessageMap = new Map();
+        validPrevMessages.forEach(msg => {
+          if (msg.id.startsWith('temp-user-')) {
+            // Create a key based on content and approximate time (within 5 seconds)
+            const timeKey = Math.floor(new Date(msg.timestamp).getTime() / 5000);
+            const contentKey = msg.content.trim();
+            tempUserMessageMap.set(`${contentKey}-${timeKey}`, msg.id);
+          }
         });
         
-        // Then add or update with messages from the query
-        data.getMessages.forEach(msg => {
-          // Only update if the message doesn't exist or if it's more complete
-          if (!messageMap.has(msg.id) || 
-              (messageMap.get(msg.id).isComplete === false && msg.isComplete === true)) {
+        // First add all existing messages to the map, except temporary ones that have server counterparts
+        prevMessages.forEach(msg => {
+          // Skip undefined messages or messages without IDs
+          if (!msg || !msg.id) {
+            console.log('Skipping undefined message or message without ID');
+            return;
+          }
+          
+          // For temporary user messages, check if we have a server version
+          if (msg.id.startsWith('temp-user-')) {
+            const timeKey = Math.floor(new Date(msg.timestamp).getTime() / 5000);
+            const contentKey = msg.content ? msg.content.trim() : '';
+            const mapKey = `${contentKey}-${timeKey}`;
+            
+            // Check if this temporary message has a server counterpart
+            const hasServerVersion = data.getMessages.some(serverMsg => 
+              serverMsg && 
+              serverMsg.role === 'user' && 
+              serverMsg.content && 
+              serverMsg.content.trim() === contentKey &&
+              Math.abs(new Date(serverMsg.timestamp).getTime() - new Date(msg.timestamp).getTime()) < 10000
+            );
+            
+            // If there's no server version yet, keep the temporary message
+            if (!hasServerVersion) {
+              messageMap.set(msg.id, msg);
+            } else {
+              console.log('Skipping temporary message that has a server counterpart:', msg.id);
+            }
+          } else if (!msg.id.startsWith('placeholder-')) {
+            // Keep all non-temporary, non-placeholder messages
             messageMap.set(msg.id, msg);
+          }
+        });
+        
+        // Then add messages from the query, replacing any temporary versions
+        validMessages.forEach(msg => {
+          // Always add server messages
+          messageMap.set(msg.id, msg);
+          
+          // If this is a user message, remove any temporary version with the same content
+          if (msg && msg.role === 'user' && msg.content) {
+            const timeKey = Math.floor(new Date(msg.timestamp).getTime() / 5000);
+            const contentKey = msg.content.trim();
+            const mapKey = `${contentKey}-${timeKey}`;
+            
+            // If we have a temporary version of this message, remove it
+            if (tempUserMessageMap.has(mapKey)) {
+              const tempId = tempUserMessageMap.get(mapKey);
+              if (messageMap.has(tempId)) {
+                console.log('Removing temporary message replaced by server version:', tempId);
+                messageMap.delete(tempId);
+              }
+            }
           }
         });
         
@@ -651,6 +755,7 @@ function ChatInterface({ conversation }) {
             user: mergedMessages.filter(msg => msg.role === 'user').length,
             assistant: mergedMessages.filter(msg => msg.role === 'assistant').length
           },
+          temporaryRemaining: mergedMessages.filter(msg => msg.id.startsWith('temp-user-')).length,
           placeholders: mergedMessages.filter(msg => msg.id.startsWith('placeholder-')).length
         });
         
