@@ -293,22 +293,17 @@ mutation SendMessage {
     conversationId: "CONVERSATION_ID",
     content: "Tell me about AWS AppSync"
   ) {
-    userMessage {
-      id
-      content
-      role
-      timestamp
-    }
-    assistantMessage {
-      id
-      content
-      role
-      timestamp
-      isComplete
-    }
+    id
+    conversationId
+    content
+    role
+    timestamp
+    isComplete
   }
 }
 ```
+
+> **Note:** The `sendMessage` mutation returns only the user message. The assistant's response will be delivered through the `onNewMessage` and `onMessageUpdate` subscriptions.
 
 3. Subscribe to new messages:
 
@@ -415,7 +410,7 @@ The streaming functionality is implemented through several components working to
 
 #### 1. Frontend Implementation
 
-The React frontend uses Apollo Client to handle GraphQL operations and subscriptions:
+The React frontend uses Apollo Client to handle GraphQL operations and subscriptions. The implementation includes sophisticated handling of streaming responses:
 
 ```javascript
 // Subscribe to streaming message updates
@@ -424,22 +419,51 @@ const { data: messageUpdateData } = useSubscription(ON_MESSAGE_UPDATE, {
   onSubscriptionData: ({ subscriptionData, client }) => {
     const update = subscriptionData.data.onMessageUpdate;
     
-    // Update the UI with the streaming content
+    // Update our local state directly with the updated messages
     setMessages(prevMessages => {
-      // Find and update the message with the streaming content
+      console.log('Previous messages in state:', prevMessages);
+      
+      // Create a map of message IDs to messages for easy lookup
       const messageMap = new Map();
+      
+      // First add all existing messages to the map
       prevMessages.forEach(msg => {
+        // Skip placeholders that are being replaced
+        if (msg.id.startsWith('placeholder-') && 
+            uniqueMessages.some(m => m.role === 'assistant' && m.isComplete)) {
+          console.log('Skipping placeholder in state merge:', msg.id);
+          return;
+        }
         messageMap.set(msg.id, msg);
       });
       
-      // Update the message with new content
-      if (messageMap.has(update.messageId)) {
-        const updatedMessage = {
-          ...messageMap.get(update.messageId),
-          content: update.content,
-          isComplete: update.isComplete
-        };
-        messageMap.set(update.messageId, updatedMessage);
+      // Then add or update with messages from the update
+      if (update.messageId) {
+        // Find existing message or create new one
+        const existingMessage = Array.from(messageMap.values()).find(
+          msg => msg.id === update.messageId || 
+                (msg.role === 'assistant' && !msg.isComplete)
+        );
+        
+        if (existingMessage) {
+          // Update existing message
+          messageMap.set(existingMessage.id, {
+            ...existingMessage,
+            id: update.messageId, // Ensure ID matches
+            content: update.content,
+            isComplete: update.isComplete
+          });
+        } else {
+          // Create new message object
+          messageMap.set(update.messageId, {
+            id: update.messageId,
+            conversationId: update.conversationId,
+            content: update.content,
+            role: 'assistant',
+            timestamp: update.timestamp,
+            isComplete: update.isComplete
+          });
+        }
       }
       
       // Convert back to array and sort by timestamp
@@ -450,7 +474,13 @@ const { data: messageUpdateData } = useSubscription(ON_MESSAGE_UPDATE, {
 });
 ```
 
-The frontend maintains a local state of messages and updates the UI in real-time as streaming chunks arrive.
+The frontend maintains a local state of messages and updates the UI in real-time as streaming chunks arrive. It includes sophisticated handling for:
+
+- Placeholder messages while waiting for the first streaming chunk
+- Message identification and matching
+- Handling out-of-order updates
+- Automatic scrolling to show new content
+- Cache management with Apollo Client
 
 #### 2. Message Handler Lambda
 
@@ -505,9 +535,20 @@ Key technical aspects:
 
 #### 3. Streaming Handler Lambda
 
-The Streaming Handler Lambda implements the streaming functionality using AWS SDK v3:
+The Streaming Handler Lambda implements the streaming functionality using AWS SDK v3 for Bedrock:
 
 ```javascript
+// Import AWS SDK v3 modules
+const { BedrockRuntimeClient, InvokeModelWithResponseStreamCommand } = require('@aws-sdk/client-bedrock-runtime');
+const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBDocumentClient, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+
+// Initialize AWS clients
+const region = process.env.AWS_REGION || 'us-east-1';
+const bedrockClient = new BedrockRuntimeClient({ region });
+const dynamoClient = new DynamoDBClient({ region });
+const ddbDocClient = DynamoDBDocumentClient.from(dynamoClient);
+
 // Invoke Bedrock model with streaming
 const response = await bedrockClient.send(new InvokeModelWithResponseStreamCommand({
   modelId: BEDROCK_MODEL_ID,
@@ -519,16 +560,31 @@ const response = await bedrockClient.send(new InvokeModelWithResponseStreamComma
 // Process streaming response using async iteration
 let accumulatedContent = "";
 for await (const chunk of response.body) {
-  // Extract text from chunk
-  const tokenText = extractTextFromChunk(chunk);
-  if (tokenText) {
-    accumulatedContent += tokenText;
+  try {
+    // Enhanced logging for chunk structure
+    console.log('Chunk received:', chunk);
     
-    // Update DynamoDB with incremental content
-    await updateMessageInDynamoDB(messageId, accumulatedContent, false, conversationId);
-    
-    // Publish update to AppSync
-    await publishToAppSync(messageId, conversationId, accumulatedContent, false, APPSYNC_ENDPOINT, APPSYNC_API_KEY);
+    // Extract bytes from the chunk
+    if (chunk.chunk && chunk.chunk.bytes) {
+      const chunkData = Buffer.from(chunk.chunk.bytes).toString('utf-8');
+      const parsedData = JSON.parse(chunkData);
+      
+      // Check for content in the parsed data
+      if (parsedData.type === 'content_block_delta' || parsedData.type === 'content_block_start') {
+        if (parsedData.delta && parsedData.delta.text) {
+          const tokenText = parsedData.delta.text;
+          accumulatedContent += tokenText;
+          
+          // Update DynamoDB with incremental content
+          await updateMessageInDynamoDB(messageId, accumulatedContent, false, conversationId);
+          
+          // Publish update to AppSync
+          await publishToAppSync(messageId, conversationId, accumulatedContent, false, APPSYNC_ENDPOINT, APPSYNC_API_KEY);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error processing chunk:', error);
   }
 }
 
@@ -538,11 +594,14 @@ await publishToAppSync(messageId, conversationId, accumulatedContent, true, APPS
 ```
 
 Technical implementation details:
+- Uses AWS SDK v3 modules (`@aws-sdk/client-bedrock-runtime`, `@aws-sdk/client-dynamodb`, etc.)
 - Uses `InvokeModelWithResponseStreamCommand` from AWS SDK v3 for Bedrock streaming
 - Implements async iteration over the response stream
-- Processes each chunk to extract text content
+- Processes each chunk to extract text content from various response formats
+- Includes robust error handling for each chunk
 - Accumulates content incrementally
 - Updates DynamoDB and publishes to AppSync after each chunk
+- Verifies message existence in DynamoDB before publishing to AppSync
 
 #### 4. AppSync Integration
 
@@ -613,10 +672,12 @@ DynamoDB Schema:
     - Hash Key: `GSI1PK` (String) - Format: `MSG#<messageId>`
     - Sort Key: `GSI1SK` (String) - Format: timestamp
     - Projection Type: ALL
+    - Purpose: Enables efficient retrieval of messages by ID regardless of conversation
   - Global Secondary Index (SK-PK-index):
     - Hash Key: `SK` (String)
     - Sort Key: `PK` (String)
     - Projection Type: ALL
+    - Purpose: Enables efficient listing of all conversations (by querying for SK="METADATA")
   - Billing Mode: On-demand (PAY_PER_REQUEST)
 
 - **Item Types**:
