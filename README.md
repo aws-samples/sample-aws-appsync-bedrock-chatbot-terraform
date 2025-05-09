@@ -586,23 +586,24 @@ This mutation triggers the `onMessageUpdate` subscription, which delivers the up
 
 The DynamoDB schema uses a single-table design to efficiently support all access patterns:
 
-```mermaid
-erDiagram
-    CHATBOT_DATA {
-        string PK "Partition Key (CONV#id)"
-        string SK "Sort Key (METADATA or MSG#id)"
-        string GSI1PK "GSI Hash Key (MSG#id)"
-        string GSI1SK "GSI Sort Key (timestamp)"
-        string id
-        string conversationId
-        string content
-        string role
-        string timestamp
-        boolean isComplete
-        string title
-        string createdAt
-        string updatedAt
-    }
+```
+DynamoDB Schema:
+
+- Table Name: CHATBOT_DATA
+- Partition Key: PK (String) - Format: CONV#<conversationId>
+- Sort Key: SK (String) - Format: METADATA or MSG#<messageId>
+- GSI1 Hash Key: GSI1PK (String) - Format: MSG#<messageId>
+- GSI1 Sort Key: GSI1SK (String) - Format: timestamp
+- Attributes:
+  - id (String)
+  - conversationId (String)
+  - content (String)
+  - role (String)
+  - timestamp (String)
+  - isComplete (Boolean)
+  - title (String)
+  - createdAt (String)
+  - updatedAt (String)
 ```
 
 - **Single Table Design**:
