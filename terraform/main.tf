@@ -1,4 +1,4 @@
-# DynamoDB tables for chat history and conversations
+# DynamoDB table for chat data (single-table design)
 module "dynamodb" {
   source = "./modules/dynamodb"
   
@@ -12,8 +12,7 @@ module "iam" {
   
   project_name = var.project_name
   environment  = var.environment
-  dynamodb_messages_table_arn = module.dynamodb.messages_table_arn
-  dynamodb_conversations_table_arn = module.dynamodb.conversations_table_arn
+  dynamodb_table_arn = module.dynamodb.chatbot_data_table_arn
 }
 
 # AppSync API
@@ -34,6 +33,5 @@ module "lambda" {
   environment  = var.environment
   lambda_execution_role_arn = module.iam.lambda_execution_role_arn
   bedrock_model_id = var.bedrock_model_id
-  dynamodb_messages_table_name = module.dynamodb.messages_table_name
-  dynamodb_conversations_table_name = module.dynamodb.conversations_table_name
+  dynamodb_table_name = module.dynamodb.chatbot_data_table_name
 }

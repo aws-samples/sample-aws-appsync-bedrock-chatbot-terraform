@@ -18,13 +18,8 @@ variable "bedrock_model_id" {
   type        = string
 }
 
-variable "dynamodb_messages_table_name" {
-  description = "Name of the DynamoDB messages table"
-  type        = string
-}
-
-variable "dynamodb_conversations_table_name" {
-  description = "Name of the DynamoDB conversations table"
+variable "dynamodb_table_name" {
+  description = "Name of the DynamoDB table for chat data"
   type        = string
 }
 

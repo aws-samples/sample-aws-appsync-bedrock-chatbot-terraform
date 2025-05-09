@@ -34,8 +34,7 @@ resource "aws_lambda_function" "message_handler" {
 
   environment {
     variables = {
-      MESSAGES_TABLE_NAME         = var.dynamodb_messages_table_name
-      CONVERSATIONS_TABLE_NAME    = var.dynamodb_conversations_table_name
+      DYNAMODB_TABLE_NAME         = var.dynamodb_table_name
       BEDROCK_CLIENT_FUNCTION     = aws_lambda_function.bedrock_client.function_name
       STREAMING_HANDLER_FUNCTION  = aws_lambda_function.streaming_handler.function_name
       PROJECT_NAME                = var.project_name
@@ -88,7 +87,7 @@ resource "aws_lambda_function" "streaming_handler" {
 
   environment {
     variables = {
-      MESSAGES_TABLE_NAME = var.dynamodb_messages_table_name
+      DYNAMODB_TABLE_NAME = var.dynamodb_table_name
       BEDROCK_MODEL_ID    = var.bedrock_model_id
       PROJECT_NAME        = var.project_name
     }

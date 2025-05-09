@@ -8,12 +8,7 @@ variable "environment" {
   type        = string
 }
 
-variable "dynamodb_messages_table_arn" {
-  description = "ARN of the DynamoDB messages table"
-  type        = string
-}
-
-variable "dynamodb_conversations_table_arn" {
-  description = "ARN of the DynamoDB conversations table"
+variable "dynamodb_table_arn" {
+  description = "ARN of the DynamoDB table for chat data"
   type        = string
 }

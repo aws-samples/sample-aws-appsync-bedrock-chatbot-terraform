@@ -16,7 +16,7 @@ const appsyncClient = new AppSyncClient({ region });
 const ssmClient = new SSMClient({ region });
 
 // Environment variables
-const MESSAGES_TABLE_NAME = process.env.MESSAGES_TABLE_NAME;
+const DYNAMODB_TABLE_NAME = process.env.DYNAMODB_TABLE_NAME;
 const BEDROCK_MODEL_ID = process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-sonnet-20240229-v1:0';
 
 /**
@@ -235,10 +235,10 @@ async function updateMessageInDynamoDB(messageId, content, isComplete, conversat
   });
   
   const params = {
-    TableName: MESSAGES_TABLE_NAME,
+    TableName: DYNAMODB_TABLE_NAME,
     Key: { 
-      id: messageId,
-      conversationId: conversationId
+      PK: `CONV#${conversationId}`,
+      SK: `MSG#${messageId}`
     },
     UpdateExpression: 'SET content = :content, isComplete = :isComplete',
     ExpressionAttributeValues: {
@@ -306,10 +306,10 @@ async function publishToAppSync(messageId, conversationId, content, isComplete, 
   try {
     console.log('Verifying message in DynamoDB before publishing to AppSync');
     const getParams = {
-      TableName: MESSAGES_TABLE_NAME,
+      TableName: DYNAMODB_TABLE_NAME,
       Key: { 
-        id: messageId,
-        conversationId: conversationId
+        PK: `CONV#${conversationId}`,
+        SK: `MSG#${messageId}`
       }
     };
     

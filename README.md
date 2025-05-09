@@ -24,9 +24,8 @@ flowchart TD
     end
     
     subgraph "Data Layer"
-        MessageHandler --> MessagesTable[DynamoDB: Messages Table]
-        MessageHandler --> ConversationsTable[DynamoDB: Conversations Table]
-        StreamingHandler --> MessagesTable
+        MessageHandler --> DynamoDBTable[DynamoDB: Single Table]
+        StreamingHandler --> DynamoDBTable
     end
     
     StreamingHandler --> AppSync
@@ -35,8 +34,7 @@ flowchart TD
     Terraform -.-> MessageHandler
     Terraform -.-> BedrockClient
     Terraform -.-> StreamingHandler
-    Terraform -.-> MessagesTable
-    Terraform -.-> ConversationsTable
+    Terraform -.-> DynamoDBTable
     
     style Client fill:#f9f,stroke:#333,stroke-width:2px
     style AppSync fill:#bbf,stroke:#333,stroke-width:2px
@@ -44,8 +42,7 @@ flowchart TD
     style BedrockClient fill:#bfb,stroke:#333,stroke-width:2px
     style StreamingHandler fill:#bfb,stroke:#333,stroke-width:2px
     style Bedrock fill:#fbb,stroke:#333,stroke-width:2px
-    style MessagesTable fill:#ffd,stroke:#333,stroke-width:2px
-    style ConversationsTable fill:#ffd,stroke:#333,stroke-width:2px
+    style DynamoDBTable fill:#ffd,stroke:#333,stroke-width:2px
     style Terraform fill:#ddf,stroke:#333,stroke-width:2px
     style Subscriptions fill:#bbf,stroke:#333,stroke-width:2px
 ```
@@ -228,11 +225,21 @@ The script requires `jq` to be installed for JSON processing.
 ### Option 5: Using AWS CLI for DynamoDB Testing
 
 ```bash
-# List conversations in DynamoDB
-aws dynamodb scan --table-name $(terraform -chdir=terraform output -raw dynamodb_conversations_table_name)
+# List all items in the DynamoDB table
+aws dynamodb scan --table-name $(terraform -chdir=terraform output -raw dynamodb_chatbot_data_table_name)
 
-# List messages in DynamoDB
-aws dynamodb scan --table-name $(terraform -chdir=terraform output -raw dynamodb_messages_table_name)
+# List conversations (using the SK-PK-index GSI)
+aws dynamodb query \
+  --table-name $(terraform -chdir=terraform output -raw dynamodb_chatbot_data_table_name) \
+  --index-name SK-PK-index \
+  --key-condition-expression "SK = :metadata" \
+  --expression-attribute-values '{":metadata": {"S": "METADATA"}}'
+
+# List messages for a specific conversation
+aws dynamodb query \
+  --table-name $(terraform -chdir=terraform output -raw dynamodb_chatbot_data_table_name) \
+  --key-condition-expression "PK = :pk AND begins_with(SK, :sk_prefix)" \
+  --expression-attribute-values '{":pk": {"S": "CONV#YOUR_CONVERSATION_ID"}, ":sk_prefix": {"S": "MSG#"}}'
 ```
 
 ### Option 6: Using CloudWatch Logs for Debugging
@@ -577,38 +584,58 @@ This mutation triggers the `onMessageUpdate` subscription, which delivers the up
 
 #### 5. DynamoDB Schema
 
-The DynamoDB schema is designed to efficiently support the streaming functionality:
+The DynamoDB schema uses a single-table design to efficiently support all access patterns:
 
 ```mermaid
 erDiagram
-    CONVERSATION {
-        string id "Partition Key"
-        string title
-        string createdAt
-        string updatedAt
-    }
-    MESSAGE {
-        string id "Partition Key"
-        string conversationId "Sort Key"
+    CHATBOT_DATA {
+        string PK "Partition Key (CONV#id)"
+        string SK "Sort Key (METADATA or MSG#id)"
+        string GSI1PK "GSI Hash Key (MSG#id)"
+        string GSI1SK "GSI Sort Key (timestamp)"
+        string id
+        string conversationId
         string content
         string role
         string timestamp
         boolean isComplete
+        string title
+        string createdAt
+        string updatedAt
     }
-    CONVERSATION ||--o{ MESSAGE : contains
 ```
 
-- **Conversations Table**:
-  - Partition Key: `id` (UUID)
+- **Single Table Design**:
+  - Partition Key: `PK` (String) - Format: `CONV#<conversationId>`
+  - Sort Key: `SK` (String) - Format: `METADATA` for conversation items or `MSG#<messageId>` for message items
+  - Global Secondary Index (GSI1):
+    - Hash Key: `GSI1PK` (String) - Format: `MSG#<messageId>`
+    - Sort Key: `GSI1SK` (String) - Format: timestamp
+    - Projection Type: ALL
+  - Global Secondary Index (SK-PK-index):
+    - Hash Key: `SK` (String)
+    - Sort Key: `PK` (String)
+    - Projection Type: ALL
   - Billing Mode: On-demand (PAY_PER_REQUEST)
-  - Non-key attributes (handled at application level): `title`, `createdAt`, `updatedAt`
 
-- **Messages Table**:
-  - Partition Key: `id` (UUID)
-  - Sort Key: `conversationId` (UUID)
-  - Global Secondary Index: `ConversationIndex` with hash key `conversationId` and projection_type "ALL"
-  - Billing Mode: On-demand (PAY_PER_REQUEST)
-  - Non-key attributes (handled at application level): `content`, `role`, `timestamp`, `isComplete`
+- **Item Types**:
+  - **Conversation Items**:
+    - PK: `CONV#<uuid>`
+    - SK: `METADATA`
+    - Attributes: id, title, createdAt, updatedAt
+  
+  - **Message Items**:
+    - PK: `CONV#<conversationId>`
+    - SK: `MSG#<uuid>`
+    - GSI1PK: `MSG#<uuid>`
+    - GSI1SK: timestamp
+    - Attributes: id, conversationId, content, role, timestamp, isComplete
+
+- **Access Patterns**:
+  - Get conversation by ID: Query with `PK = "CONV#<id>"` and `SK = "METADATA"`
+  - Get all messages for a conversation: Query with `PK = "CONV#<conversationId>"` and `SK` beginning with `"MSG#"`
+  - Get message by ID: Query GSI1 with `GSI1PK = "MSG#<id>"`
+  - List all conversations: Query SK-PK-index with `SK = "METADATA"`
 
 Note: DynamoDB is schemaless for non-key attributes, meaning attributes like `content`, `role`, etc. are defined and managed at the application level rather than in the database schema itself.
 
@@ -784,4 +811,3 @@ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more inform
 ## License
 
 This library is licensed under the MIT-0 License. See the LICENSE file.
-

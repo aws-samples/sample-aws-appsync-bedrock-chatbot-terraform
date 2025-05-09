@@ -24,7 +24,7 @@ resource "aws_iam_role" "lambda_execution_role" {
 # Policy for Lambda to access DynamoDB
 resource "aws_iam_policy" "lambda_dynamodb_policy" {
   name        = "${var.project_name}-lambda-dynamodb-policy-${var.environment}"
-  description = "Policy for Lambda to access DynamoDB tables"
+  description = "Policy for Lambda to access DynamoDB table"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -40,9 +40,8 @@ resource "aws_iam_policy" "lambda_dynamodb_policy" {
         ]
         Effect = "Allow"
         Resource = [
-          var.dynamodb_messages_table_arn,
-          var.dynamodb_conversations_table_arn,
-          "${var.dynamodb_messages_table_arn}/index/*"
+          var.dynamodb_table_arn,
+          "${var.dynamodb_table_arn}/index/*"
         ]
       }
     ]

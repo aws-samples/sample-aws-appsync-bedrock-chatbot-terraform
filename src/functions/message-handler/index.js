@@ -6,8 +6,7 @@ const dynamodb = new AWS.DynamoDB.DocumentClient();
 const lambda = new AWS.Lambda();
 
 // Environment variables
-const MESSAGES_TABLE_NAME = process.env.MESSAGES_TABLE_NAME;
-const CONVERSATIONS_TABLE_NAME = process.env.CONVERSATIONS_TABLE_NAME;
+const DYNAMODB_TABLE_NAME = process.env.DYNAMODB_TABLE_NAME;
 const BEDROCK_CLIENT_FUNCTION = process.env.BEDROCK_CLIENT_FUNCTION;
 
 /**
@@ -20,7 +19,7 @@ exports.handler = async (event) => {
   
   switch (action) {
     case 'getMessage':
-      return getMessage(args.id);
+      return getMessage(args.id, args.conversationId);
     case 'getConversation':
       return getConversation(args.id);
     case 'listConversations':
@@ -48,14 +47,27 @@ exports.handler = async (event) => {
 /**
  * Get a message by ID
  */
-async function getMessage(id) {
+async function getMessage(id, conversationId) {
   const params = {
-    TableName: MESSAGES_TABLE_NAME,
-    Key: { id }
+    TableName: DYNAMODB_TABLE_NAME,
+    Key: { 
+      PK: `CONV#${conversationId}`,
+      SK: `MSG#${id}`
+    }
   };
   
   const result = await dynamodb.get(params).promise();
-  return result.Item;
+  if (!result.Item) return null;
+  
+  // Transform the item to match the expected schema
+  return {
+    id: result.Item.id,
+    conversationId: result.Item.conversationId,
+    content: result.Item.content,
+    role: result.Item.role,
+    timestamp: result.Item.timestamp,
+    isComplete: result.Item.isComplete
+  };
 }
 
 /**
@@ -63,12 +75,23 @@ async function getMessage(id) {
  */
 async function getConversation(id) {
   const params = {
-    TableName: CONVERSATIONS_TABLE_NAME,
-    Key: { id }
+    TableName: DYNAMODB_TABLE_NAME,
+    Key: { 
+      PK: `CONV#${id}`,
+      SK: 'METADATA'
+    }
   };
   
   const result = await dynamodb.get(params).promise();
-  return result.Item;
+  if (!result.Item) return null;
+  
+  // Transform the item to match the expected schema
+  return {
+    id: result.Item.id,
+    title: result.Item.title,
+    createdAt: result.Item.createdAt,
+    updatedAt: result.Item.updatedAt
+  };
 }
 
 /**
@@ -76,11 +99,23 @@ async function getConversation(id) {
  */
 async function listConversations() {
   const params = {
-    TableName: CONVERSATIONS_TABLE_NAME
+    TableName: DYNAMODB_TABLE_NAME,
+    IndexName: "SK-PK-index",
+    KeyConditionExpression: 'SK = :metadata',
+    ExpressionAttributeValues: {
+      ':metadata': 'METADATA'
+    }
   };
   
-  const result = await dynamodb.scan(params).promise();
-  return result.Items;
+  const result = await dynamodb.query(params).promise();
+  
+  // Transform the items to match the expected schema
+  return result.Items.map(item => ({
+    id: item.id,
+    title: item.title,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt
+  }));
 }
 
 /**
@@ -88,16 +123,25 @@ async function listConversations() {
  */
 async function getMessages(conversationId) {
   const params = {
-    TableName: MESSAGES_TABLE_NAME,
-    IndexName: 'ConversationIndex',
-    KeyConditionExpression: 'conversationId = :conversationId',
+    TableName: DYNAMODB_TABLE_NAME,
+    KeyConditionExpression: 'PK = :pk AND begins_with(SK, :sk_prefix)',
     ExpressionAttributeValues: {
-      ':conversationId': conversationId
+      ':pk': `CONV#${conversationId}`,
+      ':sk_prefix': 'MSG#'
     }
   };
   
   const result = await dynamodb.query(params).promise();
-  return result.Items;
+  
+  // Transform the items to match the expected schema
+  return result.Items.map(item => ({
+    id: item.id,
+    conversationId: item.conversationId,
+    content: item.content,
+    role: item.role,
+    timestamp: item.timestamp,
+    isComplete: item.isComplete
+  }));
 }
 
 /**
@@ -106,8 +150,11 @@ async function getMessages(conversationId) {
 async function sendMessage(conversationId, content) {
   // First, check if the conversation exists
   const conversationParams = {
-    TableName: CONVERSATIONS_TABLE_NAME,
-    Key: { id: conversationId }
+    TableName: DYNAMODB_TABLE_NAME,
+    Key: { 
+      PK: `CONV#${conversationId}`,
+      SK: 'METADATA'
+    }
   };
   
   const conversationResult = await dynamodb.get(conversationParams).promise();
@@ -120,6 +167,10 @@ async function sendMessage(conversationId, content) {
   const userMessageId = uuidv4();
   
   const userMessage = {
+    PK: `CONV#${conversationId}`,
+    SK: `MSG#${userMessageId}`,
+    GSI1PK: `MSG#${userMessageId}`,
+    GSI1SK: timestamp,
     id: userMessageId,
     conversationId,
     content,
@@ -129,14 +180,17 @@ async function sendMessage(conversationId, content) {
   
   // Save the user message
   await dynamodb.put({
-    TableName: MESSAGES_TABLE_NAME,
+    TableName: DYNAMODB_TABLE_NAME,
     Item: userMessage
   }).promise();
   
   // Update the conversation's updatedAt timestamp
   await dynamodb.update({
-    TableName: CONVERSATIONS_TABLE_NAME,
-    Key: { id: conversationId },
+    TableName: DYNAMODB_TABLE_NAME,
+    Key: { 
+      PK: `CONV#${conversationId}`,
+      SK: 'METADATA'
+    },
     UpdateExpression: 'SET updatedAt = :updatedAt',
     ExpressionAttributeValues: {
       ':updatedAt': timestamp
@@ -145,14 +199,13 @@ async function sendMessage(conversationId, content) {
   
   // Get conversation history for context
   const historyParams = {
-    TableName: MESSAGES_TABLE_NAME,
-    IndexName: 'ConversationIndex',
-    KeyConditionExpression: 'conversationId = :conversationId',
+    TableName: DYNAMODB_TABLE_NAME,
+    KeyConditionExpression: 'PK = :pk AND begins_with(SK, :sk_prefix)',
     ExpressionAttributeValues: {
-      ':conversationId': conversationId
+      ':pk': `CONV#${conversationId}`,
+      ':sk_prefix': 'MSG#'
     },
-    Limit: 10, // Limit to recent messages for context
-    ScanIndexForward: false // Get most recent messages first
+    Limit: 10 // Limit to recent messages for context
   };
   
   const historyResult = await dynamodb.query(historyParams).promise();
@@ -250,6 +303,10 @@ async function sendMessage(conversationId, content) {
   const assistantMessageId = uuidv4();
   const assistantTimestamp = new Date().toISOString();
   const assistantMessage = {
+    PK: `CONV#${conversationId}`,
+    SK: `MSG#${assistantMessageId}`,
+    GSI1PK: `MSG#${assistantMessageId}`,
+    GSI1SK: assistantTimestamp,
     id: assistantMessageId,
     conversationId,
     content: "...", // Initial placeholder
@@ -260,7 +317,7 @@ async function sendMessage(conversationId, content) {
   
   // Save the initial assistant message
   await dynamodb.put({
-    TableName: MESSAGES_TABLE_NAME,
+    TableName: DYNAMODB_TABLE_NAME,
     Item: assistantMessage
   }).promise();
   
@@ -331,9 +388,23 @@ async function sendMessage(conversationId, content) {
   }
   
   // Return both messages so the resolver can handle them appropriately
+  // Transform to match the expected schema
   return {
-    userMessage,
-    assistantMessage
+    userMessage: {
+      id: userMessage.id,
+      conversationId: userMessage.conversationId,
+      content: userMessage.content,
+      role: userMessage.role,
+      timestamp: userMessage.timestamp
+    },
+    assistantMessage: {
+      id: assistantMessage.id,
+      conversationId: assistantMessage.conversationId,
+      content: assistantMessage.content,
+      role: assistantMessage.role,
+      timestamp: assistantMessage.timestamp,
+      isComplete: assistantMessage.isComplete
+    }
   };
 }
 
@@ -342,19 +413,29 @@ async function sendMessage(conversationId, content) {
  */
 async function createConversation(title) {
   const timestamp = new Date().toISOString();
+  const id = uuidv4();
+  
   const conversation = {
-    id: uuidv4(),
+    PK: `CONV#${id}`,
+    SK: 'METADATA',
+    id,
     title: title || 'New Conversation',
     createdAt: timestamp,
     updatedAt: timestamp
   };
   
   await dynamodb.put({
-    TableName: CONVERSATIONS_TABLE_NAME,
+    TableName: DYNAMODB_TABLE_NAME,
     Item: conversation
   }).promise();
   
-  return conversation;
+  // Transform to match the expected schema
+  return {
+    id: conversation.id,
+    title: conversation.title,
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt
+  };
 }
 
 /**
@@ -365,10 +446,10 @@ async function updateMessageContent(messageId, conversationId, content, isComple
   
   // Update the message in DynamoDB
   await dynamodb.update({
-    TableName: MESSAGES_TABLE_NAME,
+    TableName: DYNAMODB_TABLE_NAME,
     Key: { 
-      id: messageId,
-      conversationId: conversationId
+      PK: `CONV#${conversationId}`,
+      SK: `MSG#${messageId}`
     },
     UpdateExpression: 'SET content = :content, isComplete = :isComplete',
     ExpressionAttributeValues: {
