@@ -115,14 +115,15 @@ We've implemented Lambda resolvers to handle the business logic for each GraphQL
 The message handler Lambda function is responsible for:
 - Processing GraphQL operations
 - Interacting with DynamoDB
-- Coordinating with the Bedrock client
+- Invoking the Streaming Handler Lambda function
 
-### Bedrock Client
+### Streaming Handler
 
-The Bedrock client Lambda function:
+The streaming handler Lambda function:
 - Formats messages for the Bedrock model
-- Invokes the Bedrock model
-- Processes and returns the AI-generated response
+- Invokes the Bedrock model with streaming enabled
+- Processes streaming responses and updates DynamoDB incrementally
+- Publishes updates to AppSync for real-time client updates
 
 ## Integration with Amazon Bedrock
 

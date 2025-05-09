@@ -18,9 +18,7 @@ flowchart TD
     
     subgraph "Business Logic"
         MessageHandler --> StreamingHandler[Lambda: Streaming Handler]
-        MessageHandler --> BedrockClient[Lambda: Bedrock Client]
         StreamingHandler --> Bedrock[Amazon Bedrock]
-        BedrockClient --> Bedrock
     end
     
     subgraph "Data Layer"
@@ -32,14 +30,12 @@ flowchart TD
     
     Terraform[Terraform IaC] -.-> AppSync
     Terraform -.-> MessageHandler
-    Terraform -.-> BedrockClient
     Terraform -.-> StreamingHandler
     Terraform -.-> DynamoDBTable
     
     style Client fill:#f9f,stroke:#333,stroke-width:2px
     style AppSync fill:#bbf,stroke:#333,stroke-width:2px
     style MessageHandler fill:#bfb,stroke:#333,stroke-width:2px
-    style BedrockClient fill:#bfb,stroke:#333,stroke-width:2px
     style StreamingHandler fill:#bfb,stroke:#333,stroke-width:2px
     style Bedrock fill:#fbb,stroke:#333,stroke-width:2px
     style DynamoDBTable fill:#ffd,stroke:#333,stroke-width:2px
@@ -91,7 +87,6 @@ appsync-genai-terraform/
 ├── src/                        # Source code
 │   ├── functions/              # Lambda functions
 │   │   ├── message-handler/    # Message handling Lambda
-│   │   ├── bedrock-client/     # Bedrock integration Lambda
 │   │   └── streaming-handler/  # Streaming response handler Lambda
 │   └── schema/                 # GraphQL schema
 │       └── schema.graphql      # AppSync GraphQL schema
@@ -123,10 +118,6 @@ cd appsync-genai-terraform
 
 ```bash
 cd src/functions/message-handler
-npm install
-cd ../../..
-
-cd src/functions/bedrock-client
 npm install
 cd ../../..
 
@@ -249,7 +240,6 @@ aws dynamodb query \
 3. Find logs for your Lambda functions:
    - `/aws/lambda/message-handler-function`
    - `/aws/lambda/streaming-handler-function`
-   - `/aws/lambda/bedrock-client-function`
 4. Review logs for any errors or issues
 
 ## Using the Chatbot
@@ -709,7 +699,6 @@ sequenceDiagram
     participant AppSync as AWS AppSync
     participant MessageHandler as Lambda: Message Handler
     participant StreamingHandler as Lambda: Streaming Handler
-    participant BedrockClient as Lambda: Bedrock Client
     participant Bedrock as Amazon Bedrock
     participant DynamoDB
     
@@ -717,14 +706,6 @@ sequenceDiagram
     AppSync->>MessageHandler: Invoke Lambda resolver
     MessageHandler->>DynamoDB: Store user message
     
-    Note over MessageHandler,StreamingHandler: For standard responses
-    MessageHandler->>BedrockClient: Request AI response
-    BedrockClient->>Bedrock: Invoke model
-    Bedrock-->>BedrockClient: AI-generated response
-    BedrockClient-->>MessageHandler: Return response
-    MessageHandler->>DynamoDB: Store AI response
-    
-    Note over MessageHandler,StreamingHandler: For streaming responses
     MessageHandler->>DynamoDB: Create initial empty assistant message
     MessageHandler->>StreamingHandler: Invoke asynchronously
     MessageHandler-->>AppSync: Return user message

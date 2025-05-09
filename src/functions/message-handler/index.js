@@ -7,7 +7,6 @@ const lambda = new AWS.Lambda();
 
 // Environment variables
 const DYNAMODB_TABLE_NAME = process.env.DYNAMODB_TABLE_NAME;
-const BEDROCK_CLIENT_FUNCTION = process.env.BEDROCK_CLIENT_FUNCTION;
 
 /**
  * Main handler for AppSync resolvers
