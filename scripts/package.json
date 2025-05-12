@@ -1,0 +1,13 @@
+{
+  "name": "appsync-genai-chatbot-scripts",
+  "version": "1.0.0",
+  "description": "Scripts for the AWS GenAI Chatbot project",
+  "scripts": {
+    "seed-users": "node seed-users.js"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.1400.0",
+    "bcryptjs": "^2.4.3",
+    "uuid": "^9.0.0"
+  }
+}

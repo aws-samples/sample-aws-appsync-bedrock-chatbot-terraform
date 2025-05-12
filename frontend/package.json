@@ -12,8 +12,10 @@
     "aws-appsync-subscription-link": "^3.1.2",
     "graphql": "^15.10.0",
     "graphql-tag": "^2.12.6",
+    "jwt-decode": "^3.1.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-router-dom": "^6.14.0",
     "react-scripts": "^5.0.1",
     "uuid": "^9.0.0"
   },

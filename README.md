@@ -12,6 +12,10 @@ flowchart TD
         Client[Client Application]
     end
     
+    subgraph "Authentication Layer"
+        AuthLambda[Lambda: Auth Handler]
+    end
+    
     subgraph "API Layer"
         AppSync[AWS AppSync GraphQL API]
     end
@@ -27,10 +31,17 @@ flowchart TD
     
     subgraph "Data Layer"
         DynamoDBTable[DynamoDB: Single Table]
+        UsersTable[DynamoDB: Users Table]
+        SecretsManager[AWS Secrets Manager]
     end
     
-    Client <--> AppSync
-    AppSync --> MessageHandler
+    Client -- "1. Login Request" --> AuthLambda
+    AuthLambda -- "2. Verify Credentials" --> UsersTable
+    AuthLambda -- "3. Get JWT Secret" --> SecretsManager
+    AuthLambda -- "4. JWT Token" --> Client
+    Client -- "5. Request with JWT" --> AppSync
+    AppSync -- "6. Validate JWT" --> AuthLambda
+    AppSync -- "7. If Authorized" --> MessageHandler
     MessageHandler --> StreamingHandler
     StreamingHandler --> Bedrock
     MessageHandler --> DynamoDBTable
@@ -44,6 +55,9 @@ flowchart TD
     style StreamingHandler fill:#bfb,stroke:#333,stroke-width:2px
     style Bedrock fill:#fbb,stroke:#333,stroke-width:2px
     style DynamoDBTable fill:#ffd,stroke:#333,stroke-width:2px
+    style UsersTable fill:#ffd,stroke:#333,stroke-width:2px
+    style AuthLambda fill:#bfb,stroke:#333,stroke-width:2px
+    style SecretsManager fill:#ffd,stroke:#333,stroke-width:2px
 ```
 
 The solution consists of the following components:
@@ -125,6 +139,10 @@ npm install
 cd ../../..
 
 cd src/functions/streaming-handler
+npm install
+cd ../../..
+
+cd src/functions/auth-handler
 npm install
 cd ../../..
 ```
@@ -842,6 +860,36 @@ The Terraform configuration uses AWS provider version 4.x and follows best pract
 - **Table Configuration**: Modify the DynamoDB table settings in `terraform/modules/dynamodb/main.tf`.
 - **Frontend Styling**: Customize the frontend appearance by modifying the CSS files in `frontend/src/components/`.
 - **Streaming Behavior**: Adjust the streaming behavior by modifying the `streaming-handler/index.js` file.
+
+## Authentication
+
+This project includes a JWT-based authentication system with Lambda authorizers for AppSync and role-based access control. The authentication system secures both HTTP and WebSocket connections.
+
+Key features:
+- User authentication with JWT tokens
+- Lambda authorizer for AppSync
+- Multiple authentication methods (Lambda authorizer for users, IAM for services)
+- Role-based access control
+- Secure secret management with AWS Secrets Manager
+
+### Demo Credentials
+
+For testing, you can use these pre-configured accounts:
+
+| Username | Password    | Role  |
+|----------|-------------|-------|
+| demo     | password123 | user  |
+| admin    | admin123    | admin |
+
+To seed these default users after deploying the infrastructure:
+
+```bash
+cd scripts
+npm install
+AWS_REGION=us-east-1 USERS_TABLE_NAME=$(cd ../terraform && terraform output -raw dynamodb_users_table_name) node seed-users.js
+```
+
+For detailed information about the authentication implementation, see the [Authentication Guide](authentication-guide.md).
 
 ## Cleanup
 

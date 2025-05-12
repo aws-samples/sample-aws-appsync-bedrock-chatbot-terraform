@@ -7,7 +7,7 @@ type Message {
   isComplete: Boolean
 }
 
-type MessageUpdate {
+type MessageUpdate @aws_iam {
   messageId: ID!
   conversationId: ID!
   content: String!
@@ -33,6 +33,7 @@ type Mutation {
   sendMessage(conversationId: ID!, content: String!): Message
   createConversation(title: String): Conversation
   updateMessageContent(messageId: ID!, conversationId: ID!, content: String!, isComplete: Boolean!): MessageUpdate
+    @aws_iam
 }
 
 type Subscription {

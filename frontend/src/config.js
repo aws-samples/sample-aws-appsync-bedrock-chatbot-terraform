@@ -10,6 +10,15 @@ const config = {
     
     // AWS region where your resources are deployed
     region: "us-east-1" // Change to your deployment region
+  },
+  
+  // Authentication API configuration
+  apiUrl: "https://syaahvlmjk.execute-api.us-east-1.amazonaws.com", // Replace with your API Gateway URL from Terraform output
+  
+  // JWT configuration
+  jwt: {
+    expiresIn: 86400, // 24 hours in seconds
+    tokenPrefix: "Bearer "
   }
 };
 

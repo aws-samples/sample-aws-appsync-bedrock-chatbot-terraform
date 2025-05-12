@@ -21,3 +21,16 @@ variable "bedrock_model_id" {
   type        = string
   default     = "anthropic.claude-3-sonnet-20240229-v1:0"
 }
+
+variable "jwt_secret" {
+  description = "Secret key for JWT token signing"
+  type        = string
+  default     = "change-me-in-production-environment"
+  sensitive   = true
+}
+
+variable "cors_allowed_origins" {
+  description = "List of allowed origins for CORS"
+  type        = list(string)
+  default     = ["*"]
+}

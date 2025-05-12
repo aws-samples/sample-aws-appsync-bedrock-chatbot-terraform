@@ -6,7 +6,198 @@ This document provides a detailed explanation of how this simple serverless arch
 
 ![GenAI Chatbot Numbered Flow](generated-diagrams/genai-chatbot-numbered-flow.png)
 
-## Implementation Details
+The diagram above illustrates the complete flow of the GenAI Chatbot application, including both the authentication flow and conversation flow:
+
+### Authentication Flow (Steps 1-7)
+1. **Login Request**: Client sends login credentials to API Gateway
+2. **Forward Request**: API Gateway forwards the request to Auth Lambda
+3. **Verify Credentials**: Auth Lambda verifies credentials against Users Table
+4. **Get JWT Secret**: Auth Lambda retrieves JWT secret from Secrets Manager
+5. **Return JWT Token**: Auth Lambda returns JWT token to client
+6. **Request with JWT**: Client includes JWT token in requests to AppSync
+7. **Validate JWT**: AppSync validates JWT token with Auth Lambda
+
+### Conversation Flow (Steps 8-14)
+8. **If Authorized**: AppSync forwards authorized requests to Message Handler
+9. **Store Messages**: Message Handler stores messages in DynamoDB
+10. **Invoke Async**: Message Handler asynchronously invokes Streaming Handler
+11. **Stream Request**: Streaming Handler sends request to Amazon Bedrock
+12a. **Stream Response**: Bedrock streams response back to Streaming Handler
+12b. **Update Message**: Streaming Handler updates message content in DynamoDB
+13. **Publish Updates**: Streaming Handler publishes updates to AppSync
+14. **Stream Response**: AppSync streams response to client
+
+### Service-to-Service Authentication (Steps 15-16)
+15. **IAM Auth**: Streaming Handler uses IAM authentication for service calls
+16. **Authorize**: IAM authorizes the Streaming Handler to publish to AppSync
+
+## Authentication Flow
+
+The authentication system uses JWT tokens with a Lambda authorizer for secure access to the API:
+
+### 1. Client → Auth Lambda: Login Request
+
+User submits login credentials to the Auth Lambda via API Gateway:
+
+```javascript
+// In frontend code (frontend/src/auth/authService.js)
+async login(username, password) {
+  const response = await fetch(`${config.apiUrl}/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ username, password }),
+  });
+  
+  const data = await response.json();
+  
+  // Store token in localStorage
+  localStorage.setItem('token', data.token);
+  localStorage.setItem('username', data.username);
+  
+  return data;
+}
+```
+
+### 2. Auth Lambda → Users Table: Verify Credentials
+
+Auth Lambda verifies the credentials against the Users DynamoDB table:
+
+```javascript
+// In auth-handler/index.js
+// Get user from DynamoDB
+const params = {
+  TableName: USERS_TABLE,
+  Key: { username }
+};
+
+const result = await dynamodb.get(params).promise();
+const user = result.Item;
+
+// Check if user exists and password is correct
+if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
+  return {
+    statusCode: 401,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: 'Invalid credentials' })
+  };
+}
+```
+
+### 3. Auth Lambda → Secrets Manager: Get JWT Secret
+
+Auth Lambda retrieves the JWT secret from AWS Secrets Manager:
+
+```javascript
+// In auth-handler/index.js
+async function getJwtSecret() {
+  if (cachedJwtSecret) {
+    return cachedJwtSecret;
+  }
+  
+  const data = await secretsManager.getSecretValue({ SecretId: JWT_SECRET_ARN }).promise();
+  cachedJwtSecret = JSON.parse(data.SecretString).jwtSecret;
+  return cachedJwtSecret;
+}
+```
+
+### 4. Auth Lambda → Client: JWT Token
+
+Auth Lambda generates and returns a JWT token to the client:
+
+```javascript
+// In auth-handler/index.js
+// Generate token (valid for 24 hours)
+const token = jwt.sign(
+  { 
+    sub: username,
+    username: username,
+    email: user.email,
+    roles: user.roles || ['user']
+  },
+  jwtSecret,
+  { expiresIn: '24h' }
+);
+
+// Return success response with token
+return {
+  statusCode: 200,
+  headers: {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*'
+  },
+  body: JSON.stringify({
+    token,
+    username,
+    roles: user.roles,
+    expiresIn: 86400 // 24 hours in seconds
+  })
+};
+```
+
+### 5. Client → AppSync: Request with JWT
+
+Client includes the JWT token in the Authorization header for AppSync requests:
+
+```javascript
+// In frontend/src/graphql/client.js
+const authLink = setContext((_, { headers }) => {
+  // Get the token
+  const token = authService.getToken();
+  
+  return {
+    headers: {
+      ...headers,
+      authorization: token ? `Bearer ${token}` : "",
+    }
+  };
+});
+```
+
+### 6. AppSync → Auth Lambda: Validate JWT
+
+AppSync invokes the Auth Lambda to validate the JWT token:
+
+```javascript
+// In auth-handler/index.js
+async function handleAuthorization(event) {
+  try {
+    // Extract token from Authorization header
+    const authHeader = event.authorizationToken;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return { isAuthorized: false };
+    }
+    
+    const token = authHeader.split(' ')[1];
+    
+    // Get JWT secret
+    const jwtSecret = await getJwtSecret();
+    
+    // Verify the token
+    const decoded = jwt.verify(token, jwtSecret);
+    
+    // Return authorization result with user context
+    return {
+      isAuthorized: true,
+      resolverContext: {
+        username: decoded.username,
+        email: decoded.email,
+        roles: decoded.roles || []
+      }
+    };
+  } catch (error) {
+    console.error('Authorization error:', error);
+    return { isAuthorized: false };
+  }
+}
+```
+
+### 7. AppSync → Message Handler: If Authorized
+
+If the token is valid, AppSync allows the request to proceed to the Message Handler Lambda.
+
+## Conversation Flow Implementation Details
 
 ### 1. Client → AppSync: Send Message
 

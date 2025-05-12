@@ -12,6 +12,13 @@ data "archive_file" "streaming_handler_zip" {
   output_path = "${path.module}/streaming-handler.zip"
 }
 
+# Create a zip file for the auth handler Lambda function
+data "archive_file" "auth_handler_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../../../src/functions/auth-handler"
+  output_path = "${path.module}/auth-handler.zip"
+}
+
 # Lambda function for handling messages
 resource "aws_lambda_function" "message_handler" {
   function_name = "${var.project_name}-message-handler-${var.environment}"
@@ -90,5 +97,40 @@ resource "aws_lambda_permission" "appsync_streaming_handler_permission" {
   statement_id  = "AllowAppSyncToInvokeStreamingHandler"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.streaming_handler.function_name
+  principal     = "appsync.amazonaws.com"
+}
+
+# Lambda function for authentication and authorization
+resource "aws_lambda_function" "auth_handler" {
+  function_name = "${var.project_name}-auth-handler-${var.environment}"
+  description   = "Lambda function for authentication and authorization"
+  role          = var.lambda_execution_role_arn
+  handler       = "index.handler"
+  runtime       = "nodejs18.x"
+  timeout       = 30
+  memory_size   = 256
+
+  filename         = data.archive_file.auth_handler_zip.output_path
+  source_code_hash = data.archive_file.auth_handler_zip.output_base64sha256
+
+  environment {
+    variables = {
+      USERS_TABLE_NAME = var.users_table_name
+      JWT_SECRET_ARN   = var.jwt_secret_arn
+      PROJECT_NAME     = var.project_name
+    }
+  }
+
+  tags = {
+    Name        = "${var.project_name}-auth-handler"
+    Environment = var.environment
+  }
+}
+
+# Permission for AppSync to invoke the auth handler Lambda function for authorization
+resource "aws_lambda_permission" "appsync_auth_handler_permission" {
+  statement_id  = "AllowAppSyncToInvokeAuthHandler"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.auth_handler.function_name
   principal     = "appsync.amazonaws.com"
 }

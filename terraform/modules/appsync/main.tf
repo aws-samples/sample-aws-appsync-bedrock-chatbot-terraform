@@ -1,12 +1,22 @@
 # AppSync API
 resource "aws_appsync_graphql_api" "chatbot_api" {
   name                = "${var.project_name}-api-${var.environment}"
-  authentication_type = "API_KEY"
+  authentication_type = "AWS_LAMBDA"
   schema              = file("${path.module}/../../../src/schema/schema.graphql")
+
+  lambda_authorizer_config {
+    authorizer_uri = var.auth_lambda_function_arn
+    identity_validation_expression = "Bearer .*"
+  }
+
+  # Add additional authentication provider for IAM
+  additional_authentication_provider {
+    authentication_type = "AWS_IAM"
+  }
 
   log_config {
     cloudwatch_logs_role_arn = aws_iam_role.appsync_logs_role.arn
-    field_log_level          = "ERROR"
+    field_log_level          = "ALL"  # Change from ERROR to ALL for more detailed logs
   }
 
   tags = {
@@ -15,7 +25,7 @@ resource "aws_appsync_graphql_api" "chatbot_api" {
   }
 }
 
-# API Key for AppSync
+# API Key for AppSync (kept for backward compatibility and testing)
 resource "aws_appsync_api_key" "chatbot_api_key" {
   api_id  = aws_appsync_graphql_api.chatbot_api.id
   expires = timeadd(timestamp(), "8760h")
@@ -279,6 +289,9 @@ resource "aws_appsync_resolver" "update_message_content_resolver" {
   type        = "Mutation"
   field       = "updateMessageContent"
   data_source = aws_appsync_datasource.message_handler_datasource.name
+  
+  # This resolver will inherit authentication types from the API
+  # Including AWS_IAM from the additional_authentication_provider
 
   request_template = <<EOF
 {
@@ -286,7 +299,9 @@ resource "aws_appsync_resolver" "update_message_content_resolver" {
   "operation": "Invoke",
   "payload": {
     "action": "updateMessageContent",
-    "arguments": $util.toJson($context.arguments)
+    "arguments": $util.toJson($context.arguments),
+    "authMode": "AWS_IAM",
+    "identity": $util.toJson($context.identity)
   }
 }
 EOF

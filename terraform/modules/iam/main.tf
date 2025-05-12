@@ -24,7 +24,7 @@ resource "aws_iam_role" "lambda_execution_role" {
 # Policy for Lambda to access DynamoDB
 resource "aws_iam_policy" "lambda_dynamodb_policy" {
   name        = "${var.project_name}-lambda-dynamodb-policy-${var.environment}"
-  description = "Policy for Lambda to access DynamoDB table"
+  description = "Policy for Lambda to access DynamoDB tables"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -41,8 +41,29 @@ resource "aws_iam_policy" "lambda_dynamodb_policy" {
         Effect = "Allow"
         Resource = [
           var.dynamodb_table_arn,
-          "${var.dynamodb_table_arn}/index/*"
+          "${var.dynamodb_table_arn}/index/*",
+          var.users_table_arn,
+          "${var.users_table_arn}/index/*"
         ]
+      }
+    ]
+  })
+}
+
+# Policy for Lambda to access Secrets Manager
+resource "aws_iam_policy" "lambda_secrets_policy" {
+  name        = "${var.project_name}-lambda-secrets-policy-${var.environment}"
+  description = "Policy for Lambda to access Secrets Manager"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Effect   = "Allow"
+        Resource = var.jwt_secret_arn
       }
     ]
   })
@@ -118,12 +139,20 @@ resource "aws_iam_policy" "lambda_appsync_policy" {
     Statement = [
       {
         Action = [
-          "appsync:GraphQL",
+          "appsync:GraphQL"
+        ]
+        Effect   = "Allow"
+        Resource = [
+          "arn:aws:appsync:*:*:apis/${var.appsync_api_id}/*"
+        ]
+      },
+      {
+        Action = [
           "appsync:ListGraphqlApis",
           "appsync:ListApiKeys"
         ]
         Effect   = "Allow"
-        Resource = "*"  # You can restrict this to specific AppSync API ARNs if needed
+        Resource = "*"
       }
     ]
   })
@@ -153,6 +182,11 @@ resource "aws_iam_policy" "lambda_ssm_policy" {
 resource "aws_iam_role_policy_attachment" "lambda_dynamodb_attachment" {
   role       = aws_iam_role.lambda_execution_role.name
   policy_arn = aws_iam_policy.lambda_dynamodb_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_secrets_attachment" {
+  role       = aws_iam_role.lambda_execution_role.name
+  policy_arn = aws_iam_policy.lambda_secrets_policy.arn
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_bedrock_attachment" {

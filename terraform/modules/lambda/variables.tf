@@ -23,5 +23,15 @@ variable "dynamodb_table_name" {
   type        = string
 }
 
+variable "users_table_name" {
+  description = "Name of the DynamoDB table for user data"
+  type        = string
+}
+
+variable "jwt_secret_arn" {
+  description = "ARN of the JWT secret in Secrets Manager"
+  type        = string
+}
+
 # These variables are removed to break the circular dependency
 # The AppSync endpoint and API key will be passed through the event payload

@@ -15,6 +15,25 @@ while [[ "$#" -gt 0 ]]; do
   shift
 done
 
+echo "===== Installing Lambda function dependencies ====="
+# Message handler
+echo "Installing dependencies for message-handler..."
+cd src/functions/message-handler
+npm install
+cd ../../..
+
+# Streaming handler
+echo "Installing dependencies for streaming-handler..."
+cd src/functions/streaming-handler
+npm install
+cd ../../..
+
+# Auth handler
+echo "Installing dependencies for auth-handler..."
+cd src/functions/auth-handler
+npm install
+cd ../../..
+
 echo "===== Applying Terraform changes ====="
 cd terraform
 terraform apply -auto-approve

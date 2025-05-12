@@ -1,0 +1,14 @@
+{
+  "name": "auth-handler",
+  "version": "1.0.0",
+  "description": "Authentication handler for JWT-based authentication",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "jsonwebtoken": "^9.0.0",
+    "bcryptjs": "^2.4.3",
+    "aws-sdk": "^2.1400.0"
+  }
+}

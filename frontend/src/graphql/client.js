@@ -2,15 +2,31 @@ import { ApolloClient, InMemoryCache, createHttpLink } from '@apollo/client';
 import { ApolloLink } from 'apollo-link';
 import { createAuthLink } from 'aws-appsync-auth-link';
 import { createSubscriptionHandshakeLink } from 'aws-appsync-subscription-link';
+import { setContext } from '@apollo/client/link/context';
 import config from '../config';
+import authService from '../auth/authService';
 
 // Create an HTTP link for queries and mutations
 const httpLink = createHttpLink({
   uri: config.appSync.graphqlEndpoint,
 });
 
-// Create an auth link for API key authentication
-const authLink = createAuthLink({
+// Create an auth link that adds the JWT token to the Authorization header
+const jwtAuthLink = setContext((_, { headers }) => {
+  // Get the authentication token from the auth service
+  const token = authService.getToken();
+  
+  // Return the headers to the context so httpLink can read them
+  return {
+    headers: {
+      ...headers,
+      authorization: token ? `Bearer ${token}` : '',
+    }
+  };
+});
+
+// Fallback to API key authentication if no JWT token is available
+const apiKeyAuthLink = createAuthLink({
   url: config.appSync.graphqlEndpoint,
   region: config.appSync.region,
   auth: {
@@ -24,14 +40,15 @@ const subscriptionLink = createSubscriptionHandshakeLink({
   url: config.appSync.graphqlEndpoint,
   region: config.appSync.region,
   auth: {
-    type: 'API_KEY',
-    apiKey: config.appSync.apiKey,
+    type: 'AWS_LAMBDA',
+    token: authService.getToken() ? `Bearer ${authService.getToken()}` : '',
   },
 });
 
 // Combine the links
 const link = ApolloLink.from([
-  authLink,
+  // Always use JWT auth link to add Authorization header if user is logged in
+  jwtAuthLink,
   // Use subscription link for subscription operations, http link for others
   ApolloLink.split(
     operation => {

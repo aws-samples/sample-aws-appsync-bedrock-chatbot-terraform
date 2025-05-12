@@ -9,11 +9,16 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@aws-sdk/client-bedrock-runtime": "^3.414.0",
-    "@aws-sdk/client-dynamodb": "^3.414.0",
-    "@aws-sdk/lib-dynamodb": "^3.414.0",
-    "@aws-sdk/client-appsync": "^3.414.0",
-    "@aws-sdk/client-ssm": "^3.414.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.374.0",
+    "@aws-sdk/client-dynamodb": "^3.374.0",
+    "@aws-sdk/lib-dynamodb": "^3.374.0",
+    "@aws-sdk/client-appsync": "^3.374.0",
+    "@aws-sdk/client-ssm": "^3.374.0",
+    "@aws-sdk/signature-v4": "^3.374.0",
+    "@aws-sdk/protocol-http": "^3.374.0",
+    "@aws-sdk/node-http-handler": "^3.374.0",
+    "@aws-sdk/credential-provider-node": "^3.374.0",
+    "@aws-sdk/hash-node": "^3.374.0",
     "uuid": "^9.0.0"
   }
 }

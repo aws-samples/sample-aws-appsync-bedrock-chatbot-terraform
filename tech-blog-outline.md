@@ -16,10 +16,11 @@ This solution demonstrates how to:
 Our architecture follows serverless best practices, with each component handling a specific responsibility:
 
 1. **AWS AppSync**: Provides the GraphQL API layer with real-time capabilities through subscriptions
-2. **AWS Lambda**: Contains the business logic for message handling and Bedrock integration
-3. **Amazon DynamoDB**: Stores conversation and message data with efficient access patterns
+2. **AWS Lambda**: Contains the business logic for message handling, authentication, and Bedrock integration
+3. **Amazon DynamoDB**: Stores conversation, message, and user data with efficient access patterns
 4. **Amazon Bedrock**: Provides the foundation model for AI-powered responses
-5. **Terraform**: Manages the infrastructure as code for consistent deployments
+5. **AWS Secrets Manager**: Securely stores JWT secrets for authentication
+6. **Terraform**: Manages the infrastructure as code for consistent deployments
 
 [Architecture Diagram]
 
@@ -154,15 +155,79 @@ Our architecture is designed to be scalable and cost-effective:
 
 We've implemented several security best practices:
 - Principle of least privilege for IAM roles
-- API key authentication for AppSync (can be extended to use Cognito)
+- JWT-based authentication with Lambda authorizer for AppSync
+- Password hashing with bcrypt for secure credential storage
+- Secrets management using AWS Secrets Manager for JWT secrets
 - Encryption of data at rest and in transit
+
+## Authentication Implementation
+
+Our chatbot includes a secure authentication system using JWT tokens and a Lambda authorizer:
+
+### Auth Lambda Function
+
+The Auth Lambda function handles both login requests and token validation:
+
+```javascript
+exports.handler = async (event) => {
+  // Determine if this is a login request or token validation
+  if (event.requestContext && event.requestContext.http) {
+    return handleLogin(event);
+  } else {
+    return handleAuthorization(event);
+  }
+};
+```
+
+### JWT-Based Authentication
+
+We use JSON Web Tokens (JWT) for secure authentication:
+
+1. **Token Generation**: Upon successful login, we generate a JWT containing user information:
+
+```javascript
+const token = jwt.sign(
+  { 
+    sub: username,
+    username: username,
+    roles: user.roles || ['user']
+  },
+  jwtSecret,
+  { expiresIn: '24h' }
+);
+```
+
+2. **Token Validation**: AppSync uses the same Lambda function to validate tokens:
+
+```javascript
+const decoded = jwt.verify(token, jwtSecret);
+return {
+  isAuthorized: true,
+  resolverContext: {
+    username: decoded.username,
+    roles: decoded.roles || []
+  }
+};
+```
+
+### Secure Password Storage
+
+User passwords are securely hashed using bcrypt before storage:
+
+```javascript
+// When creating a user
+const passwordHash = await bcrypt.hash(password, 10);
+
+// When validating a login
+const passwordValid = await bcrypt.compare(password, user.passwordHash);
+```
 
 ## Conclusion
 
 This project demonstrates how to build a production-ready GenAI chatbot using AWS services. The serverless architecture provides scalability, cost-effectiveness, and ease of maintenance, while Terraform ensures consistent and repeatable deployments.
 
 The solution can be extended in several ways:
-- Adding user authentication with Amazon Cognito
+- Enhancing the authentication system with refresh tokens
 - Implementing a web or mobile frontend
 - Adding support for multiple AI models
 - Enhancing the conversation context with additional metadata

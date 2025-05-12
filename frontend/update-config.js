@@ -29,10 +29,11 @@ try {
   // Extract the required values
   const graphqlEndpoint = terraformOutput.appsync_graphql_endpoint?.value;
   const apiKey = terraformOutput.appsync_api_key?.value;
+  const authApiEndpoint = terraformOutput.auth_api_endpoint?.value;
   
-  if (!graphqlEndpoint || !apiKey) {
+  if (!graphqlEndpoint || !apiKey || !authApiEndpoint) {
     console.error('Error: Could not find required values in Terraform output.');
-    console.error('Make sure the output file contains appsync_graphql_endpoint and appsync_api_key.');
+    console.error('Make sure the output file contains appsync_graphql_endpoint, appsync_api_key, and auth_api_endpoint.');
     process.exit(1);
   }
   
@@ -44,7 +45,8 @@ try {
   const updatedConfig = configContent
     .replace(/graphqlEndpoint: ".*"/, `graphqlEndpoint: "${graphqlEndpoint}"`)
     .replace(/apiKey: ".*"/, `apiKey: "${apiKey}"`)
-    .replace(/region: ".*"/, `region: "${region}"`);
+    .replace(/region: ".*"/, `region: "${region}"`)
+    .replace(/apiUrl: ".*"/, `apiUrl: "${authApiEndpoint}"`);
   
   // Write the updated config back to the file
   fs.writeFileSync(configPath, updatedConfig);
@@ -52,6 +54,7 @@ try {
   console.log('Configuration updated successfully!');
   console.log(`GraphQL Endpoint: ${graphqlEndpoint}`);
   console.log(`API Key: ${apiKey.substring(0, 5)}...${apiKey.substring(apiKey.length - 5)}`);
+  console.log(`Auth API Endpoint: ${authApiEndpoint}`);
   console.log(`Region: ${region}`);
   
 } catch (error) {

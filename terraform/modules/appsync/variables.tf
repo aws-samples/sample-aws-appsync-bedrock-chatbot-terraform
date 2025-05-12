@@ -17,3 +17,8 @@ variable "lambda_function_names" {
   description = "Map of Lambda function names"
   type        = map(string)
 }
+
+variable "auth_lambda_function_arn" {
+  description = "ARN of the Auth Lambda function for authorization"
+  type        = string
+}

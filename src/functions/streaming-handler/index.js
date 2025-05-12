@@ -4,6 +4,11 @@ const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, UpdateCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
 const { AppSyncClient } = require('@aws-sdk/client-appsync');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
+const { SignatureV4 } = require('@aws-sdk/signature-v4');
+const { HttpRequest } = require('@aws-sdk/protocol-http');
+const { NodeHttpHandler } = require('@aws-sdk/node-http-handler');
+const { defaultProvider } = require('@aws-sdk/credential-provider-node');
+const { Hash } = require('@aws-sdk/hash-node');
 const { PassThrough } = require('stream');
 const https = require('https');
 
@@ -279,29 +284,6 @@ async function publishToAppSync(messageId, conversationId, content, isComplete, 
     return;
   }
   
-  // If API key is not available or is a placeholder, try to get it from SSM
-  if (!appsyncApiKey || appsyncApiKey === 'API_KEY_NOT_AVAILABLE') {
-    try {
-      const projectName = process.env.PROJECT_NAME || 'chatbot';
-      const parameterName = `/${projectName}/appsync/api-key`;
-      
-      const parameter = await ssmClient.send(new GetParameterCommand({
-        Name: parameterName,
-        WithDecryption: true
-      }));
-      
-      if (parameter && parameter.Parameter && parameter.Parameter.Value) {
-        appsyncApiKey = parameter.Parameter.Value;
-      } else {
-        console.warn('API key not found in SSM Parameter Store');
-        return;
-      }
-    } catch (error) {
-      console.error('Error getting API key from SSM:', error);
-      return;
-    }
-  }
-  
   // First, verify the message exists in DynamoDB and get the latest data
   try {
     console.log('Verifying message in DynamoDB before publishing to AppSync');
@@ -373,101 +355,158 @@ async function publishToAppSync(messageId, conversationId, content, isComplete, 
     console.error('Error extracting API ID from endpoint:', error);
   }
   
-  // Execute the mutation
+  // Execute the mutation using AWS AppSync client with IAM auth
   try {
-    console.log('Available AppSync methods:', Object.getOwnPropertyNames(AppSyncClient.prototype));
+    console.log('Using AppSync client with IAM authentication');
     
-    // Use HTTP request directly since AWS SDK v3 doesn't have a direct GraphQL operation
-    console.log('Using HTTP request for GraphQL operation');
+    // Create a GraphQL request
+    const requestBody = JSON.stringify({
+      query: mutation,
+      variables: variables
+    });
     
-    // Create a promise-based HTTP request
-    const makeRequest = () => {
-      return new Promise((resolve, reject) => {
-        const requestBody = JSON.stringify({
-          query: mutation,
-          variables: variables
-        });
-        
-        const options = {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': appsyncApiKey
-          }
-        };
-        
-        // Log HTTP request details
-        console.log('AppSync request headers:', JSON.stringify({
-          'Content-Type': options.headers['Content-Type'],
-          'x-api-key': 'REDACTED'
-        }, null, 2));
-        console.log('AppSync request body length:', requestBody.length);
-        console.log('AppSync full request body:', requestBody);
-        
-        const startTime = Date.now();
-        
-        const req = https.request(appsyncEndpoint, options, (res) => {
-          let data = '';
-          res.on('data', (chunk) => {
-            data += chunk;
-          });
-          res.on('end', () => {
-            const endTime = Date.now();
-            console.log(`AppSync request completed in ${endTime - startTime}ms`);
-            console.log('AppSync response status:', res.statusCode);
-            console.log('AppSync full response body:', data);
-            
-            if (res.statusCode >= 200 && res.statusCode < 300) {
-              // Log the response from AppSync
-              try {
-                const parsedResponse = JSON.parse(data);
-                console.log('AppSync response data:', JSON.stringify(parsedResponse.data, null, 2));
-                
-                if (parsedResponse.errors) {
-                  console.error('AppSync response errors:', JSON.stringify(parsedResponse.errors, null, 2));
-                  
-                  // Check for specific error types
-                  const errors = parsedResponse.errors;
-                  for (const error of errors) {
-                    if (error.message.includes('Cannot return null for non-nullable')) {
-                      console.error('Schema validation error: A non-nullable field is returning null');
-                    } else if (error.message.includes('Unauthorized')) {
-                      console.error('Authorization error: Check API key or IAM permissions');
-                    }
-                  }
-                } else if (parsedResponse.data && parsedResponse.data.updateMessageContent === null) {
-                  console.error('AppSync returned null for updateMessageContent. This indicates the resolver is not returning data properly.');
-                  console.log('This might be due to:');
-                  console.log('1. The Lambda function not returning the expected data structure');
-                  console.log('2. The AppSync resolver not properly handling the Lambda response');
-                  console.log('3. The DynamoDB update not completing before the response is sent');
-                } else {
-                  console.log('AppSync response successful (no errors)');
-                }
-              } catch (parseError) {
-                console.log('Could not parse AppSync response as JSON:', data);
-              }
-              
-              resolve(data);
-            } else {
-              console.error('AppSync HTTP error response:', data);
-              reject(new Error(`HTTP Error: ${res.statusCode} ${data}`));
-            }
-          });
-        });
-        
-        req.on('error', (error) => {
-          console.error('AppSync request network error:', error.message);
-          reject(error);
-        });
-        
-        req.write(requestBody);
-        req.end();
-      });
+    // Use the AWS SDK v3 AppSync client to execute the GraphQL mutation
+    const graphqlParams = {
+      apiId: apiId,
+      query: mutation,
+      variables: JSON.stringify(variables),
+      authMode: 'AWS_IAM'
     };
     
-    await makeRequest();
-    console.log('Successfully published to AppSync');
+    console.log('Executing GraphQL mutation with IAM auth:', graphqlParams);
+    
+    try {
+      // Use the AppSync client to execute the mutation
+      // Note: The AWS SDK v3 AppSync client doesn't have a GraphQL method
+      // This will likely fail, so we'll fall back to the SigV4 signing approach
+      console.log('Attempting to use AppSync client, but this will likely fail');
+      try {
+        const result = await appsyncClient.send({
+          apiId: apiId,
+          query: mutation,
+          variables: JSON.stringify(variables),
+          authMode: 'AWS_IAM'
+        });
+        console.log('AppSync GraphQL result:', result);
+        console.log('Successfully published to AppSync with IAM auth');
+      } catch (clientError) {
+        throw new Error('AppSync client method not supported');
+      }
+    } catch (appsyncError) {
+      console.error('Error using AppSync client:', appsyncError);
+      
+      // Fall back to using HTTP request with SigV4 signing using AWS SDK v3
+      console.log('Falling back to HTTP request with SigV4 signing using AWS SDK v3');
+      
+      const endpoint = new URL(appsyncEndpoint);
+      
+      // Create a request to be signed
+      const request = new HttpRequest({
+        hostname: endpoint.hostname,
+        path: endpoint.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          host: endpoint.hostname
+        },
+        body: requestBody
+      });
+      
+      // Get credentials for debugging
+      const credentialsProvider = defaultProvider();
+      try {
+        const credentials = await credentialsProvider();
+        console.log('Using credentials with access key ID:', credentials.accessKeyId);
+        console.log('Credentials expiration:', credentials.expiration);
+      } catch (credError) {
+        console.error('Error getting credentials:', credError);
+      }
+      
+      // Create a signer with the service name 'appsync'
+      const signer = new SignatureV4({
+        credentials: credentialsProvider,
+        region: region,
+        service: 'appsync',
+        sha256: Hash.bind(null, 'sha256')
+      });
+      
+      console.log('Using region for signing:', region);
+      
+      // Sign the request
+      const signedRequest = await signer.sign(request);
+      
+      // Log the full signed request (except for sensitive headers)
+      const redactedHeaders = {...signedRequest.headers};
+      if (redactedHeaders.Authorization) redactedHeaders.Authorization = "REDACTED";
+      console.log('Full signed request:', {
+        method: signedRequest.method,
+        hostname: signedRequest.hostname,
+        path: signedRequest.path,
+        headers: redactedHeaders
+      });
+      
+      // Convert the signed request to a format that can be used with https
+      const options = {
+        method: signedRequest.method,
+        host: endpoint.hostname,
+        path: endpoint.pathname,
+        headers: signedRequest.headers
+      };
+      
+      // Log HTTP request details
+      console.log('AppSync request headers:', JSON.stringify({
+        'Content-Type': options.headers['Content-Type'],
+        'Authorization': 'REDACTED',
+        'X-Amz-Date': options.headers['X-Amz-Date']
+      }, null, 2));
+      
+      // Create a promise-based HTTP request
+      const makeRequest = () => {
+        return new Promise((resolve, reject) => {
+          const httpRequest = https.request(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => {
+              data += chunk;
+            });
+            res.on('end', () => {
+              console.log('AppSync response status:', res.statusCode);
+              console.log('AppSync full response body:', data);
+              
+              if (res.statusCode >= 200 && res.statusCode < 300) {
+                try {
+                  const parsedResponse = JSON.parse(data);
+                  console.log('AppSync response data:', JSON.stringify(parsedResponse.data, null, 2));
+                  
+                  if (parsedResponse.errors) {
+                    console.error('AppSync response errors:', JSON.stringify(parsedResponse.errors, null, 2));
+                  } else {
+                    console.log('AppSync response successful (no errors)');
+                  }
+                } catch (parseError) {
+                  console.log('Could not parse AppSync response as JSON:', data);
+                }
+                
+                resolve(data);
+              } else {
+                console.error('AppSync HTTP error response:', data);
+                reject(new Error(`HTTP Error: ${res.statusCode} ${data}`));
+              }
+            });
+          });
+          
+          httpRequest.on('error', (error) => {
+            console.error('AppSync request network error:', error.message);
+            reject(error);
+          });
+          
+          httpRequest.write(requestBody);
+          httpRequest.end();
+        });
+      };
+      
+      await makeRequest();
+      console.log('Successfully published to AppSync with SigV4 signing');
+    }
   } catch (error) {
     console.error('Error publishing to AppSync:', error);
     console.error('GraphQL endpoint:', appsyncEndpoint);
