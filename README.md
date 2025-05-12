@@ -167,6 +167,20 @@ cd ..
 
 This script will apply Terraform changes, update the frontend configuration, and restart the frontend application.
 
+5. **Configure the frontend**
+
+After deployment, you'll need to configure the frontend with your AWS resource information:
+
+```bash
+# Copy the example config file
+cp frontend/src/config.js.example frontend/src/config.js
+
+# Update the config with your Terraform outputs
+node frontend/update-config.js terraform/terraform-output.json your-aws-region
+```
+
+> **Note:** The `terraform-output.json` file and `config.js` file contain sensitive information and are excluded from version control in the `.gitignore` file. Never commit these files to your repository.
+
 ## Testing After Deployment
 
 After deploying the infrastructure with Terraform, you have several options to test your AWS GenAI Chatbot:

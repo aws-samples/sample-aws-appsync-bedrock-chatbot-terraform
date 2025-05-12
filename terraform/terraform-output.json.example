@@ -1,0 +1,42 @@
+{
+  "appsync_graphql_endpoint": {
+    "sensitive": false,
+    "type": "string",
+    "value": "https://example-appsync-endpoint.appsync-api.region.amazonaws.com/graphql"
+  },
+  "appsync_api_key": {
+    "sensitive": true,
+    "type": "string",
+    "value": "da2-xxxxxxxxxxxxxxxxxxxx"
+  },
+  "api_gateway_url": {
+    "sensitive": false,
+    "type": "string",
+    "value": "https://xxxxxxxxxx.execute-api.region.amazonaws.com"
+  },
+  "dynamodb_chatbot_data_table_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "genai-chatbot-data-dev"
+  },
+  "dynamodb_users_table_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "genai-chatbot-users-dev"
+  },
+  "auth_lambda_function_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "genai-chatbot-auth-handler-dev"
+  },
+  "message_handler_lambda_function_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "genai-chatbot-message-handler-dev"
+  },
+  "streaming_handler_lambda_function_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "genai-chatbot-streaming-handler-dev"
+  }
+}

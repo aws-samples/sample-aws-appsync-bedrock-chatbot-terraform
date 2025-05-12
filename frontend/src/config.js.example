@@ -1,0 +1,25 @@
+// Replace these values with the outputs from your Terraform deployment
+const config = {
+  // AppSync configuration
+  appSync: {
+    // GraphQL endpoint URL from Terraform output: appsync_graphql_endpoint
+    graphqlEndpoint: "YOUR_APPSYNC_ENDPOINT_URL",
+    
+    // API key from Terraform output: appsync_api_key
+    apiKey: "YOUR_APPSYNC_API_KEY",
+    
+    // AWS region where your resources are deployed
+    region: "us-east-1" // Change to your deployment region
+  },
+  
+  // Authentication API configuration
+  apiUrl: "YOUR_API_GATEWAY_URL", // Replace with your API Gateway URL from Terraform output
+  
+  // JWT configuration
+  jwt: {
+    expiresIn: 86400, // 24 hours in seconds
+    tokenPrefix: "Bearer "
+  }
+};
+
+export default config;

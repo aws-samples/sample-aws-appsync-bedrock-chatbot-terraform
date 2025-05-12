@@ -5,6 +5,7 @@ terraform.tfstate
 terraform.tfstate.backup
 *.tfvars
 *.tfplan
+terraform/terraform-output.json
 
 # Node.js dependencies
 **/node_modules/
@@ -26,12 +27,13 @@ package-lock.json
 .DS_Store
 Thumbs.db
 
-# Environment variables
+# Environment variables and configuration
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+frontend/src/config.js
 
 # Logs
 logs/
