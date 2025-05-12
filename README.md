@@ -183,7 +183,7 @@ node frontend/update-config.js terraform/terraform-output.json your-aws-region
 
 ## Testing After Deployment
 
-After deploying the infrastructure with Terraform, you have several options to test your AWS GenAI Chatbot:
+After deploying the infrastructure with Terraform, you have two main options to test your AWS GenAI Chatbot:
 
 ### Option 1: Using the React Frontend (Recommended)
 
@@ -197,6 +197,10 @@ npm install
 2. **Update the frontend configuration with Terraform outputs**:
 
 ```bash
+# Copy the example config file
+cp src/config.js.example src/config.js
+
+# Update the config with your Terraform outputs
 node update-config.js ../terraform/terraform-output.json your-aws-region
 ```
 
@@ -217,65 +221,7 @@ npm start
 5. Use the API key from Terraform output for authentication
 6. Test GraphQL operations as described in the "Using the Chatbot" section below
 
-### Option 3: Using Postman or Insomnia
-
-1. Get the GraphQL endpoint URL and API key from Terraform outputs
-2. Set up a new request in Postman/Insomnia:
-   - Method: POST
-   - URL: Your GraphQL endpoint
-   - Headers:
-     - `Content-Type: application/json`
-     - `x-api-key: YOUR_API_KEY`
-   - Body (JSON): Your GraphQL query or mutation
-
-### Option 4: Using the test-api.sh Script
-
-We've included a convenient bash script to test the API directly from the command line:
-
-```bash
-# Make the script executable (if not already)
-chmod +x test-api.sh
-
-# Run the script
-./test-api.sh
-```
-
-This interactive script allows you to:
-- Create new conversations
-- List all conversations
-- Send messages to the AI
-- View messages in a conversation
-
-The script requires `jq` to be installed for JSON processing.
-
-### Option 5: Using AWS CLI for DynamoDB Testing
-
-```bash
-# List all items in the DynamoDB table
-aws dynamodb scan --table-name $(terraform -chdir=terraform output -raw dynamodb_chatbot_data_table_name)
-
-# List conversations (using the SK-PK-index GSI)
-aws dynamodb query \
-  --table-name $(terraform -chdir=terraform output -raw dynamodb_chatbot_data_table_name) \
-  --index-name SK-PK-index \
-  --key-condition-expression "SK = :metadata" \
-  --expression-attribute-values '{":metadata": {"S": "METADATA"}}'
-
-# List messages for a specific conversation
-aws dynamodb query \
-  --table-name $(terraform -chdir=terraform output -raw dynamodb_chatbot_data_table_name) \
-  --key-condition-expression "PK = :pk AND begins_with(SK, :sk_prefix)" \
-  --expression-attribute-values '{":pk": {"S": "CONV#YOUR_CONVERSATION_ID"}, ":sk_prefix": {"S": "MSG#"}}'
-```
-
-### Option 6: Using CloudWatch Logs for Debugging
-
-1. Go to AWS CloudWatch in the console
-2. Navigate to "Log groups"
-3. Find logs for your Lambda functions:
-   - `/aws/lambda/message-handler-function`
-   - `/aws/lambda/streaming-handler-function`
-4. Review logs for any errors or issues
+For advanced testing and debugging options, refer to the [Implementation Details](implementation-details.md) document.
 
 ## Using the Chatbot
 
