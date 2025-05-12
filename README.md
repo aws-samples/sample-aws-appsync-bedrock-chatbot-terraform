@@ -8,30 +8,35 @@ This project demonstrates how to build a generative AI chatbot on AWS using AppS
 
 ```mermaid
 flowchart TD
-    Client[Client Application] <--> AppSync[AWS AppSync GraphQL API]
-    
-    subgraph "API Layer"
-        AppSync --> MessageHandler[Lambda: Message Handler]
-        AppSync --> Subscriptions[Real-time Subscriptions]
-        Subscriptions --> Client
+    subgraph "Client Layer"
+        Client[Client Application]
     end
     
-    subgraph "Business Logic"
-        MessageHandler --> StreamingHandler[Lambda: Streaming Handler]
-        StreamingHandler --> Bedrock[Amazon Bedrock]
+    subgraph "API Layer"
+        AppSync[AWS AppSync GraphQL API]
+    end
+    
+    subgraph "Processing Layer"
+        MessageHandler[Lambda: Message Handler]
+        StreamingHandler[Lambda: Streaming Handler]
+    end
+    
+    subgraph "AI Services"
+        Bedrock[Amazon Bedrock]
     end
     
     subgraph "Data Layer"
-        MessageHandler --> DynamoDBTable[DynamoDB: Single Table]
-        StreamingHandler --> DynamoDBTable
+        DynamoDBTable[DynamoDB: Single Table]
     end
     
+    Client <--> AppSync
+    AppSync --> MessageHandler
+    MessageHandler --> StreamingHandler
+    StreamingHandler --> Bedrock
+    MessageHandler --> DynamoDBTable
+    StreamingHandler --> DynamoDBTable
     StreamingHandler --> AppSync
-    
-    Terraform[Terraform IaC] -.-> AppSync
-    Terraform -.-> MessageHandler
-    Terraform -.-> StreamingHandler
-    Terraform -.-> DynamoDBTable
+    AppSync --> Client
     
     style Client fill:#f9f,stroke:#333,stroke-width:2px
     style AppSync fill:#bbf,stroke:#333,stroke-width:2px
@@ -39,8 +44,6 @@ flowchart TD
     style StreamingHandler fill:#bfb,stroke:#333,stroke-width:2px
     style Bedrock fill:#fbb,stroke:#333,stroke-width:2px
     style DynamoDBTable fill:#ffd,stroke:#333,stroke-width:2px
-    style Terraform fill:#ddf,stroke:#333,stroke-width:2px
-    style Subscriptions fill:#bbf,stroke:#333,stroke-width:2px
 ```
 
 The solution consists of the following components:
@@ -357,6 +360,8 @@ For production use, you can deploy the frontend to various hosting services:
 4. (Optional) Set up CloudFront for CDN distribution
 
 ## Technical Implementation Details
+
+For a detailed explanation of the implementation with code examples, see the [Simple Serverless AWS GenAI Chatbot Implementation Guide](implementation-details.md).
 
 ### GraphQL Schema
 
