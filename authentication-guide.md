@@ -478,7 +478,7 @@ If WebSocket connections fail with authentication errors:
 
 3. Use browser developer tools to inspect token storage and API requests
 
-4. For WebSocket issues, refer to the [WebSocket Authentication Fix](websocket-auth-fix.md) document
+4. Use browser developer tools to inspect WebSocket connection handshakes and messages
 
 ## Additional Resources
 
