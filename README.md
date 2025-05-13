@@ -56,6 +56,14 @@ This project serves as a comprehensive learning resource:
 
 For detailed architecture diagrams, please see the [Architecture Diagrams](docs/architecture/architecture-diagram.md) document.
 
+### Numbered Flow Diagram
+
+The following diagram illustrates the step-by-step flow of data through the system:
+
+![GenAI Chatbot Architecture Flow](generated-diagrams/genai-chatbot-numbered-flow.png)
+
+This numbered flow shows how user requests are processed through the system, from the frontend through AppSync, Lambda functions, and Bedrock, with real-time streaming responses back to the user.
+
 ### System Architecture
 
 ```mermaid
