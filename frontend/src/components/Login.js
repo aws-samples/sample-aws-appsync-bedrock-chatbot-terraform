@@ -66,13 +66,6 @@ function Login() {
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
-        
-        <div className="demo-credentials">
-          <p><strong>Demo Credentials:</strong></p>
-          <p>Username: <code>demo</code>, Password: <code>password123</code></p>
-          <p>Username: <code>admin</code>, Password: <code>admin123</code></p>
-          <p className="warning">⚠️ For demonstration purposes only</p>
-        </div>
       </div>
     </div>
   );
