@@ -39,3 +39,19 @@ output "jwt_secret_arn" {
   value       = module.secrets.jwt_secret_arn
   sensitive   = true
 }
+
+# Frontend outputs
+output "frontend_url" {
+  description = "URL of the deployed frontend"
+  value       = module.frontend.frontend_url
+}
+
+output "frontend_bucket_name" {
+  description = "Name of the S3 bucket hosting the frontend"
+  value       = module.frontend.frontend_bucket_name
+}
+
+output "cloudfront_distribution_id" {
+  description = "ID of the CloudFront distribution"
+  value       = module.frontend.cloudfront_distribution_id
+}

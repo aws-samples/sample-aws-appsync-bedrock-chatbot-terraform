@@ -4,6 +4,8 @@ This project demonstrates how to build a generative AI chatbot on AWS using AppS
 
 ## Architecture Overview
 
+For detailed architecture diagrams, please see the [Architecture Diagrams](architecture-diagram.md) document.
+
 ### System Architecture
 
 ```mermaid
@@ -322,20 +324,44 @@ You can also test the streaming functionality using the AppSync Console:
 
 ## Deploying the Frontend to Production
 
-For production use, you can deploy the frontend to various hosting services:
+The frontend can be automatically deployed to AWS S3 and CloudFront using Terraform with enhanced security:
 
-### Option 1: AWS Amplify
+1. **Apply Terraform infrastructure**:
+   ```bash
+   cd terraform
+   terraform init
+   terraform apply
+   cd ..
+   ```
+
+2. **Deploy the frontend**:
+   ```bash
+   ./deploy-frontend.sh
+   ```
+
+This will:
+- Build the React application
+- Update the configuration with Terraform outputs
+- Upload the build files to S3
+- Invalidate the CloudFront cache
+
+The deployment includes these security features:
+- Private S3 bucket with no public access
+- CloudFront Origin Access Identity (OAI) for secure content delivery
+- S3 bucket policy that only allows access from CloudFront
+- Enhanced CloudFront configuration that supports WebSocket connections
+
+After deployment, the frontend will be available at the CloudFront URL provided in the output.
+
+### Alternative Deployment Options
+
+If you prefer other deployment methods, you can also use:
+
+#### AWS Amplify
 
 1. Push your code to a Git repository
 2. Set up a new Amplify app in the AWS Management Console
 3. Connect your repository and follow the deployment steps
-
-### Option 2: AWS S3 + CloudFront
-
-1. Build the frontend: `cd frontend && npm run build`
-2. Upload the contents of the `build` directory to an S3 bucket
-3. Configure the bucket for static website hosting
-4. (Optional) Set up CloudFront for CDN distribution
 
 ## Technical Implementation Details
 

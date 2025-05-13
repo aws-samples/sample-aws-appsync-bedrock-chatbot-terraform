@@ -6,6 +6,7 @@ terraform.tfstate.backup
 *.tfvars
 *.tfplan
 terraform/terraform-output.json
+.terraform.tfstate.lock.info
 
 # Node.js dependencies
 **/node_modules/

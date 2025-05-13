@@ -60,3 +60,11 @@ module "lambda" {
   users_table_name = module.dynamodb.users_table_name
   jwt_secret_arn = module.secrets.jwt_secret_arn
 }
+
+# Frontend hosting with S3 and CloudFront
+module "frontend" {
+  source = "./modules/frontend"
+  
+  project_name = var.project_name
+  environment  = var.environment
+}

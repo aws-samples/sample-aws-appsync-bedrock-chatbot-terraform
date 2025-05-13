@@ -124,9 +124,148 @@ cd ../../..
 3. Run `./apply-changes.sh` to deploy all changes (this will automatically install dependencies)
 4. Test your changes
 
+## Production Frontend Deployment
+
+In addition to local development, this project supports automated deployment of the frontend to AWS using S3 and CloudFront.
+
+### S3 + CloudFront Deployment
+
+The project includes a Terraform module that provisions:
+- An S3 bucket configured for website hosting
+- A CloudFront distribution for content delivery
+- Proper IAM permissions and bucket policies
+
+To deploy the frontend to production:
+
+1. **Apply the Terraform infrastructure** (if not already done):
+   ```bash
+   cd terraform
+   terraform init
+   terraform apply
+   cd ..
+   ```
+
+2. **Deploy the frontend using the provided script**:
+   ```bash
+   ./deploy-frontend.sh
+   ```
+
+This script will:
+- Build the React application
+- Update the configuration with Terraform outputs
+- Upload the build files to S3
+- Invalidate the CloudFront cache
+
+After deployment, the frontend will be available at the CloudFront URL provided in the output.
+
+### Security Configuration Details
+
+The S3 and CloudFront deployment includes several security enhancements:
+
+#### S3 Bucket Security
+
+The S3 bucket is configured with the following security settings:
+
+```terraform
+resource "aws_s3_bucket_public_access_block" "frontend_bucket_access" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_acl" "frontend_bucket_acl" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+  acl    = "private"
+}
+```
+
+These settings ensure that:
+- The bucket blocks all public access
+- No public ACLs can be applied
+- The bucket ignores any public ACLs
+- The bucket restricts all public access
+- The bucket ACL is set to private
+
+#### CloudFront Origin Access Identity
+
+The deployment uses CloudFront Origin Access Identity (OAI) to restrict access to the S3 bucket:
+
+```terraform
+resource "aws_cloudfront_origin_access_identity" "frontend_oai" {
+  comment = "OAI for ${var.project_name} frontend"
+}
+```
+
+#### S3 Bucket Policy
+
+The S3 bucket policy is configured to only allow access from the CloudFront distribution:
+
+```terraform
+resource "aws_s3_bucket_policy" "frontend_bucket_policy" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "AllowCloudFrontServicePrincipal"
+        Effect    = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${aws_cloudfront_origin_access_identity.frontend_oai.id}"
+        }
+        Action    = "s3:GetObject"
+        Resource  = "${aws_s3_bucket.frontend_bucket.arn}/*"
+      }
+    ]
+  })
+}
+```
+
+This policy ensures that:
+- Only the CloudFront distribution can access objects in the S3 bucket
+- Direct access to the S3 bucket is not allowed
+- The S3 bucket content is only accessible through CloudFront
+
+#### CloudFront WebSocket Support
+
+The CloudFront distribution is configured to support WebSocket connections:
+
+```terraform
+default_cache_behavior {
+  allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+  cached_methods   = ["GET", "HEAD"]
+  
+  forwarded_values {
+    query_string = true
+    headers      = ["Origin", "Access-Control-Request-Headers", "Access-Control-Request-Method"]
+    cookies {
+      forward = "none"
+    }
+  }
+}
+```
+
+These settings ensure that:
+- All HTTP methods required for WebSocket connections are allowed
+- Necessary headers for CORS and WebSocket handshakes are forwarded
+- Query strings are forwarded, which may be needed for WebSocket connections
+
+### Security Best Practices
+
+When deploying to production, follow these additional security best practices:
+
+1. **Enable HTTPS**: The CloudFront distribution is configured to redirect HTTP to HTTPS
+2. **Use Custom Domain with SSL**: For production, consider adding a custom domain with a valid SSL certificate
+3. **Implement WAF**: Consider adding AWS WAF to protect against common web exploits
+4. **Enable CloudFront Logs**: Enable access logs for CloudFront to monitor and audit access
+5. **Set Up Monitoring**: Configure CloudWatch alarms for unusual traffic patterns
+
 ## Benefits of Terraform-Only Approach
 
 - **Consistent state management**: Terraform tracks the state of all resources
 - **Complete infrastructure as code**: All resources are defined and versioned in your Terraform files
 - **Atomic deployments**: Changes to related resources are deployed together
 - **Better auditability**: All changes go through the same deployment process
+- **Simplified production deployment**: Frontend and backend infrastructure managed through the same workflow

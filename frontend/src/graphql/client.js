@@ -3,6 +3,7 @@ import { ApolloLink } from 'apollo-link';
 import { createAuthLink } from 'aws-appsync-auth-link';
 import { createSubscriptionHandshakeLink } from 'aws-appsync-subscription-link';
 import { setContext } from '@apollo/client/link/context';
+import { onError } from '@apollo/client/link/error';
 import config from '../config';
 import authService from '../auth/authService';
 
@@ -41,12 +42,48 @@ const subscriptionLink = createSubscriptionHandshakeLink({
   region: config.appSync.region,
   auth: {
     type: 'AWS_LAMBDA',
-    token: authService.getToken() ? `Bearer ${authService.getToken()}` : '',
+    token: () => {
+      const token = authService.getToken();
+      console.log('WebSocket auth token:', token ? 'Bearer ' + token : 'No token available');
+      return token ? `Bearer ${token}` : '';
+    },
   },
+  // Add these debug options
+  connectionParams: {
+    authMode: 'AWS_LAMBDA',
+  },
+  onError: (err) => {
+    console.error('WebSocket connection error:', err);
+    console.error('WebSocket connection error details:', JSON.stringify(err, null, 2));
+  },
+});
+
+// Log the subscription link configuration
+console.log('AppSync endpoint:', config.appSync.graphqlEndpoint);
+console.log('AppSync region:', config.appSync.region);
+
+// Create an error handling link
+const errorLink = onError(({ graphQLErrors, networkError }) => {
+  if (graphQLErrors)
+    graphQLErrors.forEach(({ message, locations, path }) =>
+      console.error(
+        `[GraphQL error]: Message: ${message}, Location: ${locations}, Path: ${path}`
+      )
+    );
+  if (networkError) {
+    console.error(`[Network error]:`, networkError);
+    // Log additional details for WebSocket errors
+    if (networkError.name === 'ServerError' && networkError.statusCode === 401) {
+      console.error('WebSocket authentication error. Check your token format and validity.');
+      console.error('Error details:', JSON.stringify(networkError, null, 2));
+    }
+  }
 });
 
 // Combine the links
 const link = ApolloLink.from([
+  // Add error handling link
+  errorLink,
   // Always use JWT auth link to add Authorization header if user is logged in
   jwtAuthLink,
   // Use subscription link for subscription operations, http link for others
@@ -63,6 +100,17 @@ const link = ApolloLink.from([
 // Create the Apollo Client with cache configuration
 const client = new ApolloClient({
   link,
+  connectToDevTools: true,
+  defaultOptions: {
+    watchQuery: {
+      fetchPolicy: 'network-only',
+      errorPolicy: 'all',
+    },
+    query: {
+      fetchPolicy: 'network-only',
+      errorPolicy: 'all',
+    },
+  },
   cache: new InMemoryCache({
     typePolicies: {
       Query: {
@@ -210,5 +258,19 @@ const client = new ApolloClient({
     }
   }),
 });
+
+// Note: We've moved the error handling to the errorLink above
+
+// Add a helper function to decode base64 headers for debugging
+window.decodeWebSocketHeader = function(encodedHeader) {
+  try {
+    const decoded = JSON.parse(atob(encodedHeader));
+    console.log('Decoded WebSocket header:', decoded);
+    return decoded;
+  } catch (e) {
+    console.error('Error decoding header:', e);
+    return null;
+  }
+};
 
 export default client;
