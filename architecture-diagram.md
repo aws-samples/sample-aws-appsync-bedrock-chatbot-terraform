@@ -205,3 +205,50 @@ flowchart TD
     style DisplayTyping fill:#f9f,stroke:#333,stroke-width:2px
     style DisplayStreamingResponse fill:#f9f,stroke:#333,stroke-width:2px
     style DisplayFinalResponse fill:#f9f,stroke:#333,stroke-width:2px
+```
+
+## Data Access Security Model
+
+```mermaid
+flowchart TD
+    subgraph "Authentication"
+        User[User] --> |1. Login| AuthLambda[Auth Lambda]
+        AuthLambda --> |2. JWT Token| User
+    end
+    
+    subgraph "User-Specific Data Access"
+        User --> |3. Request with JWT| AppSync[AppSync API]
+        AppSync --> |4. Extract userId| MessageHandler[Message Handler]
+        
+        MessageHandler --> |5a. Query USER#userId| DynamoDB[(DynamoDB)]
+        MessageHandler --> |5b. Verify Ownership| DynamoDB
+        MessageHandler --> |5c. Access Data| DynamoDB
+    end
+    
+    subgraph "Data Model"
+        UserConv[USER#userId → CONV#convId]
+        ConvMeta[CONV#convId → METADATA]
+        Messages[CONV#convId → MSG#msgId]
+        
+        UserConv --> |"Ownership"| ConvMeta
+        ConvMeta --> |"Contains"| Messages
+    end
+    
+    style User fill:#f9f,stroke:#333,stroke-width:2px
+    style AppSync fill:#bbf,stroke:#333,stroke-width:2px
+    style MessageHandler fill:#bfb,stroke:#333,stroke-width:2px
+    style DynamoDB fill:#ffd,stroke:#333,stroke-width:2px
+    style UserConv fill:#ffd,stroke:#333,stroke-width:2px
+    style ConvMeta fill:#ffd,stroke:#333,stroke-width:2px
+    style Messages fill:#ffd,stroke:#333,stroke-width:2px
+    style AuthLambda fill:#bfb,stroke:#333,stroke-width:2px
+```
+
+This diagram illustrates how user-specific data access is enforced:
+
+1. User authenticates and receives a JWT token
+2. JWT token contains the user's ID
+3. AppSync extracts the user ID from the JWT token
+4. Message Handler uses the user ID to query only the user's conversations
+5. Before accessing conversation data, ownership is verified
+6. The data model links users directly to their conversations

@@ -197,6 +197,119 @@ async function handleAuthorization(event) {
 
 If the token is valid, AppSync allows the request to proceed to the Message Handler Lambda.
 
+## User-Specific Data Access
+
+The application enforces user-specific data access to ensure users can only access their own conversations and messages:
+
+### 1. Creating User-Specific Conversations
+
+When a user creates a conversation, it's associated with their user ID:
+
+```javascript
+// In message-handler/index.js
+async function createConversation(title, context) {
+  const userId = context.identity.resolverContext.userId;
+  const timestamp = new Date().toISOString();
+  const id = uuidv4();
+  
+  // Create user-conversation mapping
+  const userConversationItem = {
+    PK: `USER#${userId}`,
+    SK: `CONV#${id}`,
+    id,
+    userId,
+    title: title || 'New Conversation',
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+  
+  // Create conversation metadata
+  const conversationMetadataItem = {
+    PK: `CONV#${id}`,
+    SK: 'METADATA',
+    id,
+    userId,
+    title: title || 'New Conversation',
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+  
+  // Write both items in a transaction
+  await dynamodb.transactWrite({
+    TransactItems: [
+      { Put: { TableName: DYNAMODB_TABLE_NAME, Item: userConversationItem } },
+      { Put: { TableName: DYNAMODB_TABLE_NAME, Item: conversationMetadataItem } }
+    ]
+  }).promise();
+  
+  return {
+    id,
+    userId,
+    title: title || 'New Conversation',
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+}
+```
+
+### 2. Listing User-Specific Conversations
+
+Users can only see their own conversations:
+
+```javascript
+// In message-handler/index.js
+async function listConversations(context) {
+  const userId = context.identity.resolverContext.userId;
+  
+  const params = {
+    TableName: DYNAMODB_TABLE_NAME,
+    KeyConditionExpression: 'PK = :userId',
+    ExpressionAttributeValues: {
+      ':userId': `USER#${userId}`
+    }
+  };
+  
+  const result = await dynamodb.query(params).promise();
+  
+  return result.Items.map(item => ({
+    id: item.id,
+    userId: item.userId,
+    title: item.title,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt
+  }));
+}
+```
+
+### 3. Ownership Verification for Messages
+
+Before accessing messages, the system verifies the user owns the conversation:
+
+```javascript
+// In message-handler/index.js
+async function getMessages(conversationId, context) {
+  const userId = context.identity.resolverContext.userId;
+  
+  // First verify ownership
+  const userConvParams = {
+    TableName: DYNAMODB_TABLE_NAME,
+    Key: { 
+      PK: `USER#${userId}`,
+      SK: `CONV#${conversationId}`
+    }
+  };
+  
+  const userConvResult = await dynamodb.get(userConvParams).promise();
+  if (!userConvResult.Item) {
+    console.warn(`User ${userId} attempted to access messages for conversation ${conversationId} they don't own`);
+    return []; // Return empty array for security
+  }
+  
+  // Now get the messages
+  // ...
+}
+```
+
 ## Conversation Flow Implementation Details
 
 ### 1. Client → AppSync: Send Message

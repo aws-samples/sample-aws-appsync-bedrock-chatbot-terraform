@@ -14,21 +14,23 @@ const DYNAMODB_TABLE_NAME = process.env.DYNAMODB_TABLE_NAME;
 exports.handler = async (event) => {
   console.log('Event received:', JSON.stringify(event, null, 2));
   
-  const { action, arguments: args } = event;
+  const { action, arguments: args, identity } = event;
   
   switch (action) {
     case 'getMessage':
-      return getMessage(args.id, args.conversationId);
+      return getMessage(args.id, args.conversationId, identity);
     case 'getConversation':
-      return getConversation(args.id);
+      return getConversation(args.id, identity);
     case 'listConversations':
-      return listConversations();
+      return listConversations(identity);
+    case 'listRecentConversations':
+      return listRecentConversations(args.limit, identity);
     case 'getMessages':
-      return getMessages(args.conversationId);
+      return getMessages(args.conversationId, identity);
     case 'sendMessage':
-      return sendMessage(args.conversationId, args.content);
+      return sendMessage(args.conversationId, args.content, identity);
     case 'createConversation':
-      return createConversation(args.title);
+      return createConversation(args.title, identity);
     case 'updateMessageContent':
       return updateMessageContent(args.messageId, args.conversationId, args.content, args.isComplete);
     case 'onNewMessage':
@@ -46,7 +48,25 @@ exports.handler = async (event) => {
 /**
  * Get a message by ID
  */
-async function getMessage(id, conversationId) {
+async function getMessage(id, conversationId, identity) {
+  const userId = identity?.resolverContext?.userId || 'default-user';
+  
+  // First verify ownership
+  const userConvParams = {
+    TableName: DYNAMODB_TABLE_NAME,
+    Key: { 
+      PK: `USER#${userId}`,
+      SK: `CONV#${conversationId}`
+    }
+  };
+  
+  const userConvResult = await dynamodb.get(userConvParams).promise();
+  if (!userConvResult.Item) {
+    console.warn(`User ${userId} attempted to access message ${id} in conversation ${conversationId} they don't own`);
+    return null;
+  }
+  
+  // Now get the message
   const params = {
     TableName: DYNAMODB_TABLE_NAME,
     Key: { 
@@ -72,37 +92,45 @@ async function getMessage(id, conversationId) {
 /**
  * Get a conversation by ID
  */
-async function getConversation(id) {
-  const params = {
+async function getConversation(id, identity) {
+  const userId = identity?.resolverContext?.userId || 'default-user';
+  
+  // First check if user owns the conversation
+  const userConvParams = {
     TableName: DYNAMODB_TABLE_NAME,
     Key: { 
-      PK: `CONV#${id}`,
-      SK: 'METADATA'
+      PK: `USER#${userId}`,
+      SK: `CONV#${id}`
     }
   };
   
-  const result = await dynamodb.get(params).promise();
-  if (!result.Item) return null;
+  const userConvResult = await dynamodb.get(userConvParams).promise();
+  if (!userConvResult.Item) {
+    console.warn(`User ${userId} attempted to access conversation ${id} they don't own`);
+    return null;
+  }
   
-  // Transform the item to match the expected schema
+  // If user owns the conversation, return it
   return {
-    id: result.Item.id,
-    title: result.Item.title,
-    createdAt: result.Item.createdAt,
-    updatedAt: result.Item.updatedAt
+    id: userConvResult.Item.id,
+    userId: userConvResult.Item.userId,
+    title: userConvResult.Item.title,
+    createdAt: userConvResult.Item.createdAt,
+    updatedAt: userConvResult.Item.updatedAt
   };
 }
 
 /**
- * List all conversations
+ * List all conversations for a user
  */
-async function listConversations() {
+async function listConversations(identity) {
+  const userId = identity?.resolverContext?.userId || 'default-user';
+  
   const params = {
     TableName: DYNAMODB_TABLE_NAME,
-    IndexName: "SK-PK-index",
-    KeyConditionExpression: 'SK = :metadata',
+    KeyConditionExpression: 'PK = :userId',
     ExpressionAttributeValues: {
-      ':metadata': 'METADATA'
+      ':userId': `USER#${userId}`
     }
   };
   
@@ -111,6 +139,7 @@ async function listConversations() {
   // Transform the items to match the expected schema
   return result.Items.map(item => ({
     id: item.id,
+    userId: item.userId,
     title: item.title,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt
@@ -118,9 +147,104 @@ async function listConversations() {
 }
 
 /**
+ * List recent conversations for a user
+ */
+async function listRecentConversations(limit, identity) {
+  // Extract user ID from identity with detailed logging
+  // Note: identity is the direct identity object, not wrapped in a context object
+  const userId = identity?.resolverContext?.userId || 'default-user';
+  const contextSource = identity?.resolverContext ? 'resolver' : 'fallback';
+  const maxLimit = limit && limit > 0 && limit <= 50 ? limit : 10;
+  
+  console.log('Listing recent conversations with identity:', { 
+    userId,
+    limit: maxLimit,
+    contextSource,
+    hasIdentity: !!identity,
+    hasResolverContext: !!identity?.resolverContext,
+    resolverContextKeys: identity?.resolverContext ? Object.keys(identity.resolverContext) : [],
+    rawUserId: identity?.resolverContext?.userId
+  });
+  
+  const params = {
+    TableName: DYNAMODB_TABLE_NAME,
+    IndexName: "GSI2",
+    KeyConditionExpression: 'GSI2PK = :userId',
+    ExpressionAttributeValues: {
+      ':userId': `USER#${userId}`
+    },
+    Limit: maxLimit
+  };
+  
+  console.log('DynamoDB query params:', {
+    TableName: params.TableName,
+    IndexName: params.IndexName,
+    KeyConditionExpression: params.KeyConditionExpression,
+    ExpressionAttributeValues: params.ExpressionAttributeValues,
+    Limit: params.Limit
+  });
+  
+  try {
+    const result = await dynamodb.query(params).promise();
+    
+    console.log('Query result stats:', {
+      count: result.Items.length,
+      scannedCount: result.ScannedCount,
+      lastEvaluatedKey: result.LastEvaluatedKey ? 'Present' : 'None'
+    });
+    
+    if (result.Items.length === 0) {
+      console.log('No conversations found for user:', userId);
+    } else {
+      console.log('Found conversations:', result.Items.map(item => ({
+        id: item.id,
+        title: item.title,
+        updatedAt: item.updatedAt
+      })));
+    }
+    
+    // Transform the items to match the expected schema
+    return result.Items.map(item => ({
+      id: item.id,
+      userId: item.userId,
+      title: item.title,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    }));
+  } catch (error) {
+    console.error('Error listing recent conversations:', error);
+    console.error('Error details:', {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      statusCode: error.statusCode
+    });
+    throw error;
+  }
+}
+
+/**
  * Get messages for a conversation
  */
-async function getMessages(conversationId) {
+async function getMessages(conversationId, identity) {
+  const userId = identity?.resolverContext?.userId || 'default-user';
+  
+  // First verify ownership
+  const userConvParams = {
+    TableName: DYNAMODB_TABLE_NAME,
+    Key: { 
+      PK: `USER#${userId}`,
+      SK: `CONV#${conversationId}`
+    }
+  };
+  
+  const userConvResult = await dynamodb.get(userConvParams).promise();
+  if (!userConvResult.Item) {
+    console.warn(`User ${userId} attempted to access messages for conversation ${conversationId} they don't own`);
+    return []; // Return empty array for security
+  }
+  
+  // Now get the messages
   const params = {
     TableName: DYNAMODB_TABLE_NAME,
     KeyConditionExpression: 'PK = :pk AND begins_with(SK, :sk_prefix)',
@@ -146,18 +270,21 @@ async function getMessages(conversationId) {
 /**
  * Send a message in a conversation
  */
-async function sendMessage(conversationId, content) {
-  // First, check if the conversation exists
-  const conversationParams = {
+async function sendMessage(conversationId, content, identity) {
+  const userId = identity?.resolverContext?.userId || 'default-user';
+  
+  // First verify ownership
+  const userConvParams = {
     TableName: DYNAMODB_TABLE_NAME,
     Key: { 
-      PK: `CONV#${conversationId}`,
-      SK: 'METADATA'
+      PK: `USER#${userId}`,
+      SK: `CONV#${conversationId}`
     }
   };
   
-  const conversationResult = await dynamodb.get(conversationParams).promise();
-  if (!conversationResult.Item) {
+  const userConvResult = await dynamodb.get(userConvParams).promise();
+  if (!userConvResult.Item) {
+    console.warn(`User ${userId} attempted to send message to conversation ${conversationId} they don't own`);
     throw new Error(`Conversation with ID ${conversationId} not found`);
   }
   
@@ -193,6 +320,22 @@ async function sendMessage(conversationId, content) {
     UpdateExpression: 'SET updatedAt = :updatedAt',
     ExpressionAttributeValues: {
       ':updatedAt': timestamp
+    }
+  }).promise();
+  
+  // Update the user-conversation mapping with new timestamp for time-based sorting
+  const reversedTimestamp = `${9999999999999 - Date.now()}`;
+  
+  await dynamodb.update({
+    TableName: DYNAMODB_TABLE_NAME,
+    Key: { 
+      PK: `USER#${userId}`,
+      SK: `CONV#${conversationId}`
+    },
+    UpdateExpression: 'SET updatedAt = :updatedAt, GSI2SK = :reversedTimestamp',
+    ExpressionAttributeValues: {
+      ':updatedAt': timestamp,
+      ':reversedTimestamp': reversedTimestamp
     }
   }).promise();
   
@@ -410,30 +553,88 @@ async function sendMessage(conversationId, content) {
 /**
  * Create a new conversation
  */
-async function createConversation(title) {
+async function createConversation(title, identity) {
+  // Extract user ID from identity with detailed logging
+  // Note: identity is the direct identity object, not wrapped in a context object
+  const userId = identity?.resolverContext?.userId || 'default-user';
+  const contextSource = identity?.resolverContext ? 'resolver' : 'fallback';
+  
+  console.log('Creating conversation with identity:', { 
+    userId,
+    title,
+    contextSource,
+    hasIdentity: !!identity,
+    hasResolverContext: !!identity?.resolverContext,
+    resolverContextKeys: identity?.resolverContext ? Object.keys(identity.resolverContext) : [],
+    rawUserId: identity?.resolverContext?.userId
+  });
+  
   const timestamp = new Date().toISOString();
   const id = uuidv4();
+  const reversedTimestamp = `${9999999999999 - Date.now()}`; // For descending order
   
-  const conversation = {
-    PK: `CONV#${id}`,
-    SK: 'METADATA',
+  // Create user-conversation mapping
+  const userConversationItem = {
+    PK: `USER#${userId}`,
+    SK: `CONV#${id}`,
+    GSI2PK: `USER#${userId}`,
+    GSI2SK: reversedTimestamp,
     id,
+    userId,
     title: title || 'New Conversation',
     createdAt: timestamp,
     updatedAt: timestamp
   };
   
-  await dynamodb.put({
-    TableName: DYNAMODB_TABLE_NAME,
-    Item: conversation
-  }).promise();
+  // Create conversation metadata
+  const conversationMetadataItem = {
+    PK: `CONV#${id}`,
+    SK: 'METADATA',
+    id,
+    userId,
+    title: title || 'New Conversation',
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+  
+  console.log('Creating conversation items:', {
+    userConversationItem: {
+      PK: userConversationItem.PK,
+      SK: userConversationItem.SK,
+      GSI2PK: userConversationItem.GSI2PK,
+      id: userConversationItem.id,
+      userId: userConversationItem.userId
+    },
+    conversationMetadataItem: {
+      PK: conversationMetadataItem.PK,
+      SK: conversationMetadataItem.SK,
+      id: conversationMetadataItem.id,
+      userId: conversationMetadataItem.userId
+    }
+  });
+  
+  // Write both items in a transaction
+  try {
+    await dynamodb.transactWrite({
+      TransactItems: [
+        { Put: { TableName: DYNAMODB_TABLE_NAME, Item: userConversationItem } },
+        { Put: { TableName: DYNAMODB_TABLE_NAME, Item: conversationMetadataItem } }
+      ]
+    }).promise();
+    
+    console.log('Successfully created conversation:', { id, userId });
+  } catch (error) {
+    console.error('Error creating conversation:', error);
+    throw error;
+  }
   
   // Transform to match the expected schema
   return {
-    id: conversation.id,
-    title: conversation.title,
-    createdAt: conversation.createdAt,
-    updatedAt: conversation.updatedAt
+    id,
+    userId,
+    title: title || 'New Conversation',
+    createdAt: timestamp,
+    updatedAt: timestamp
   };
 }
 

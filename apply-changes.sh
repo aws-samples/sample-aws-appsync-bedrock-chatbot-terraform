@@ -37,12 +37,18 @@ cd ../../..
 echo "===== Applying Terraform changes ====="
 cd terraform
 terraform apply -auto-approve
+terraform output -json > terraform-output.json
 
 echo "===== Changing back to root directory ====="
 cd ..
 
 echo "===== Updating frontend configuration ====="
 cd frontend
+# Create config.js from example if it doesn't exist
+if [ ! -f src/config.js ]; then
+  echo "Creating initial config.js file from example..."
+  cp src/config.js.example src/config.js
+fi
 npm run update-config || echo "No update-config script found, skipping"
 cd ..
 

@@ -124,13 +124,26 @@ async function handleLogin(event) {
  */
 async function handleAuthorization(event) {
   try {
+    // Log the incoming authorization event (excluding sensitive data)
+    console.log('Authorization event received:', {
+      hasAuthHeader: !!event.authorizationToken,
+      requestContext: event.requestContext ? {
+        apiId: event.requestContext.apiId,
+        accountId: event.requestContext.accountId,
+        requestId: event.requestContext.requestId,
+        operationName: event.requestContext.operationName
+      } : 'none'
+    });
+    
     // Extract token from Authorization header
     const authHeader = event.authorizationToken;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.warn('Invalid or missing authorization header');
       return { isAuthorized: false };
     }
     
     const token = authHeader.split(' ')[1];
+    console.log('JWT token received (first 10 chars):', token.substring(0, 10) + '...');
     
     // Get JWT secret
     const jwtSecret = await getJwtSecret();
@@ -138,25 +151,50 @@ async function handleAuthorization(event) {
     // Verify the token
     const decoded = jwt.verify(token, jwtSecret);
     
+    // Log decoded token information (excluding sensitive parts)
+    console.log('Token validation successful:', {
+      sub: decoded.sub,
+      username: decoded.username,
+      emailDomain: decoded.email ? decoded.email.split('@')[1] : 'none',
+      roles: decoded.roles || [],
+      issuedAt: new Date(decoded.iat * 1000).toISOString(),
+      expiresAt: new Date(decoded.exp * 1000).toISOString()
+    });
+    
     // Check if token is expired
     const currentTime = Math.floor(Date.now() / 1000);
     if (decoded.exp && decoded.exp < currentTime) {
+      console.warn('Token is expired:', {
+        expiry: new Date(decoded.exp * 1000).toISOString(),
+        currentTime: new Date(currentTime * 1000).toISOString()
+      });
       return { isAuthorized: false };
     }
+    
+    // Create resolver context
+    const resolverContext = {
+      userId: decoded.sub,
+      username: decoded.username,
+      email: decoded.email,
+      roles: JSON.stringify(decoded.roles || [])
+    };
+    
+    // Log the resolver context being returned
+    console.log('Returning resolver context:', resolverContext);
     
     // Return allow policy with user context
     // Note: resolverContext must be a map of string to string
     return {
       isAuthorized: true,
-      resolverContext: {
-        userId: decoded.sub,
-        username: decoded.username,
-        email: decoded.email,
-        roles: JSON.stringify(decoded.roles || [])
-      }
+      resolverContext
     };
   } catch (error) {
     console.error('Authorization error:', error);
+    console.error('Authorization error details:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    });
     return { isAuthorized: false };
   }
 }

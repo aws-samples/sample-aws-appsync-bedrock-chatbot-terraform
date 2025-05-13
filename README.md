@@ -350,6 +350,7 @@ The deployment includes these security features:
 - CloudFront Origin Access Identity (OAI) for secure content delivery
 - S3 bucket policy that only allows access from CloudFront
 - Enhanced CloudFront configuration that supports WebSocket connections
+- User-specific data access that ensures users can only access their own conversations and messages
 
 After deployment, the frontend will be available at the CloudFront URL provided in the output.
 

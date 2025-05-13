@@ -17,6 +17,7 @@ type MessageUpdate @aws_iam {
 
 type Conversation {
   id: ID!
+  userId: String!
   title: String
   createdAt: AWSDateTime!
   updatedAt: AWSDateTime!
@@ -26,6 +27,7 @@ type Query {
   getMessage(id: ID!): Message
   getConversation(id: ID!): Conversation
   listConversations: [Conversation]
+  listRecentConversations(limit: Int): [Conversation]
   getMessages(conversationId: ID!): [Message]
 }
 

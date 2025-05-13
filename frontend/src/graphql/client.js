@@ -17,13 +17,30 @@ const jwtAuthLink = setContext((_, { headers }) => {
   // Get the authentication token from the auth service
   const token = authService.getToken();
   
+  // Log authentication status for debugging
+  console.log('Auth token status:', {
+    isLoggedIn: !!token,
+    tokenExpiry: token ? new Date(authService.getTokenExpiry()).toISOString() : 'none',
+    username: authService.getUsername() || 'none',
+    tokenLength: token ? token.length : 0,
+    tokenPrefix: token ? token.substring(0, 10) + '...' : 'none'
+  });
+  
   // Return the headers to the context so httpLink can read them
-  return {
+  const authHeaders = {
     headers: {
       ...headers,
       authorization: token ? `Bearer ${token}` : '',
     }
   };
+  
+  console.log('Request headers:', {
+    hasAuthorization: !!authHeaders.headers.authorization,
+    authHeaderLength: authHeaders.headers.authorization ? authHeaders.headers.authorization.length : 0,
+    otherHeaders: Object.keys(authHeaders.headers).filter(key => key !== 'authorization')
+  });
+  
+  return authHeaders;
 });
 
 // Fallback to API key authentication if no JWT token is available

@@ -167,7 +167,10 @@ resource "aws_appsync_resolver" "get_message_resolver" {
   "operation": "Invoke",
   "payload": {
     "action": "getMessage",
-    "arguments": $util.toJson($context.arguments)
+    "arguments": $util.toJson($context.arguments),
+    "identity": {
+      "resolverContext": $util.toJson($context.identity.resolverContext)
+    }
   }
 }
 EOF
@@ -187,7 +190,10 @@ resource "aws_appsync_resolver" "get_conversation_resolver" {
   "operation": "Invoke",
   "payload": {
     "action": "getConversation",
-    "arguments": $util.toJson($context.arguments)
+    "arguments": $util.toJson($context.arguments),
+    "identity": {
+      "resolverContext": $util.toJson($context.identity.resolverContext)
+    }
   }
 }
 EOF
@@ -207,7 +213,33 @@ resource "aws_appsync_resolver" "list_conversations_resolver" {
   "operation": "Invoke",
   "payload": {
     "action": "listConversations",
-    "arguments": $util.toJson($context.arguments)
+    "arguments": $util.toJson($context.arguments),
+    "identity": {
+      "resolverContext": $util.toJson($context.identity.resolverContext)
+    }
+  }
+}
+EOF
+
+  response_template = "$util.toJson($context.result)"
+}
+
+resource "aws_appsync_resolver" "list_recent_conversations_resolver" {
+  api_id      = aws_appsync_graphql_api.chatbot_api.id
+  type        = "Query"
+  field       = "listRecentConversations"
+  data_source = aws_appsync_datasource.message_handler_datasource.name
+
+  request_template = <<EOF
+{
+  "version": "2018-05-29",
+  "operation": "Invoke",
+  "payload": {
+    "action": "listRecentConversations",
+    "arguments": $util.toJson($context.arguments),
+    "identity": {
+      "resolverContext": $util.toJson($context.identity.resolverContext)
+    }
   }
 }
 EOF
@@ -227,7 +259,10 @@ resource "aws_appsync_resolver" "get_messages_resolver" {
   "operation": "Invoke",
   "payload": {
     "action": "getMessages",
-    "arguments": $util.toJson($context.arguments)
+    "arguments": $util.toJson($context.arguments),
+    "identity": {
+      "resolverContext": $util.toJson($context.identity.resolverContext)
+    }
   }
 }
 EOF
@@ -247,7 +282,10 @@ resource "aws_appsync_resolver" "send_message_resolver" {
   "operation": "Invoke",
   "payload": {
     "action": "sendMessage",
-    "arguments": $util.toJson($context.arguments)
+    "arguments": $util.toJson($context.arguments),
+    "identity": {
+      "resolverContext": $util.toJson($context.identity.resolverContext)
+    }
   }
 }
 EOF
@@ -275,7 +313,10 @@ resource "aws_appsync_resolver" "create_conversation_resolver" {
   "operation": "Invoke",
   "payload": {
     "action": "createConversation",
-    "arguments": $util.toJson($context.arguments)
+    "arguments": $util.toJson($context.arguments),
+    "identity": {
+      "resolverContext": $util.toJson($context.identity.resolverContext)
+    }
   }
 }
 EOF

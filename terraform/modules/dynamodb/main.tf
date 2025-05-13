@@ -24,6 +24,16 @@ resource "aws_dynamodb_table" "chatbot_data" {
     type = "S"
   }
 
+  attribute {
+    name = "GSI2PK"
+    type = "S"
+  }
+
+  attribute {
+    name = "GSI2SK"
+    type = "S"
+  }
+
   global_secondary_index {
     name               = "GSI1"
     hash_key           = "GSI1PK"
@@ -35,6 +45,13 @@ resource "aws_dynamodb_table" "chatbot_data" {
     name               = "SK-PK-index"
     hash_key           = "SK"
     range_key          = "PK"
+    projection_type    = "ALL"
+  }
+
+  global_secondary_index {
+    name               = "GSI2"
+    hash_key           = "GSI2PK"
+    range_key          = "GSI2SK"
     projection_type    = "ALL"
   }
 

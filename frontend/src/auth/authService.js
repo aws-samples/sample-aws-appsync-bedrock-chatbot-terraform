@@ -90,6 +90,15 @@ class AuthService {
   }
   
   /**
+   * Get the token expiry timestamp
+   * @returns {number|null} - Token expiry timestamp or null if not set
+   */
+  getTokenExpiry() {
+    const expiry = localStorage.getItem('tokenExpiry');
+    return expiry ? parseInt(expiry) : null;
+  }
+  
+  /**
    * Check if the user has a specific role
    * @param {string} role - Role to check
    * @returns {boolean} - True if the user has the role, false otherwise

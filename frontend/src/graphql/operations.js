@@ -5,6 +5,7 @@ export const GET_CONVERSATION = gql`
   query GetConversation($id: ID!) {
     getConversation(id: $id) {
       id
+      userId
       title
       createdAt
       updatedAt
@@ -16,6 +17,19 @@ export const LIST_CONVERSATIONS = gql`
   query ListConversations {
     listConversations {
       id
+      userId
+      title
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+export const LIST_RECENT_CONVERSATIONS = gql`
+  query ListRecentConversations($limit: Int) {
+    listRecentConversations(limit: $limit) {
+      id
+      userId
       title
       createdAt
       updatedAt
@@ -41,6 +55,7 @@ export const CREATE_CONVERSATION = gql`
   mutation CreateConversation($title: String) {
     createConversation(title: $title) {
       id
+      userId
       title
       createdAt
       updatedAt
