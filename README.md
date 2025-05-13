@@ -5,11 +5,13 @@ This project demonstrates how to build a generative AI chatbot on AWS using AppS
 ## Documentation Guide
 
 - **[README.md](README.md)**: Overview, architecture, and key features
-- **[Architecture Diagrams](architecture-diagram.md)**: Visual representations of system components and flows
-- **[Deployment Guide](deployment-guide.md)**: Step-by-step deployment instructions
-- **[Authentication Guide](authentication-guide.md)**: Details on the authentication system
-- **[Data Modeling Guide](data-modeling.md)**: DynamoDB design patterns and access patterns
-- **[Implementation Details](implementation-details.md)**: Technical implementation with code examples
+- **[Architecture Diagrams](docs/architecture/architecture-diagram.md)**: Visual representations of system components and flows
+- **[Deployment Guide](docs/guides/deployment-guide.md)**: Step-by-step deployment instructions
+- **[Authentication Guide](docs/guides/authentication-guide.md)**: Details on the authentication system
+- **[Data Modeling Guide](docs/guides/data-modeling.md)**: DynamoDB design patterns and access patterns
+- **[Implementation Details](docs/guides/implementation-details.md)**: Technical implementation with code examples
+- **[Contributing](CONTRIBUTING.md)**: Guidelines for contributing to this project
+- **[Code of Conduct](CODE_OF_CONDUCT.md)**: Community standards and expectations
 
 ## Why This Project?
 
@@ -52,7 +54,7 @@ This project serves as a comprehensive learning resource:
 
 ## Architecture Overview
 
-For detailed architecture diagrams, please see the [Architecture Diagrams](architecture-diagram.md) document.
+For detailed architecture diagrams, please see the [Architecture Diagrams](docs/architecture/architecture-diagram.md) document.
 
 ### System Architecture
 
@@ -170,7 +172,7 @@ appsync-genai-terraform/
 
 ## Quick Start
 
-For detailed deployment instructions, please refer to the [Deployment Guide](deployment-guide.md).
+For detailed deployment instructions, please refer to the [Deployment Guide](docs/guides/deployment-guide.md).
 
 1. **Clone the repository**
 
@@ -183,10 +185,10 @@ cd appsync-genai-terraform
 
 ```bash
 # Standard deployment
-./apply-changes.sh
+./scripts/deployment/apply-changes.sh
 
 # Deployment with frontend rebuild
-./apply-changes.sh --build
+./scripts/deployment/apply-changes.sh --build
 ```
 
 This script will:
@@ -221,7 +223,7 @@ npm start
 5. Use the API key from Terraform output for authentication
 6. Test GraphQL operations as described in the "Using the Chatbot" section below
 
-For advanced testing and debugging options, refer to the [Implementation Details](implementation-details.md) document.
+For advanced testing and debugging options, refer to the [Implementation Details](docs/guides/implementation-details.md) document. You can also use the testing scripts in the `scripts/testing/` directory.
 
 ## Using the Chatbot
 
@@ -296,7 +298,7 @@ The frontend can be automatically deployed to AWS S3 and CloudFront using Terraf
 
 ```bash
 # Deploy the frontend
-./deploy-frontend.sh
+./scripts/deployment/deploy-frontend.sh
 ```
 
 This will:
@@ -316,9 +318,9 @@ After deployment, the frontend will be available at the CloudFront URL provided 
 
 ## Technical Implementation Details
 
-For a detailed explanation of the implementation with code examples, see the [Implementation Details](implementation-details.md) document.
+For a detailed explanation of the implementation with code examples, see the [Implementation Details](docs/guides/implementation-details.md) document.
 
-For information about the DynamoDB data modeling approach, see the [Data Modeling Guide](data-modeling.md).
+For information about the DynamoDB data modeling approach, see the [Data Modeling Guide](docs/guides/data-modeling.md).
 
 ## Authentication
 
@@ -331,7 +333,7 @@ Key features:
 - Role-based access control
 - Secure secret management with AWS Secrets Manager
 
-For detailed information about the authentication implementation, see the [Authentication Guide](authentication-guide.md).
+For detailed information about the authentication implementation, see the [Authentication Guide](docs/guides/authentication-guide.md).
 
 ### Demo Credentials
 

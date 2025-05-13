@@ -12,10 +12,10 @@ To deploy changes to both infrastructure and Lambda functions, use the `apply-ch
 
 ```bash
 # Standard deployment
-./apply-changes.sh
+./scripts/deployment/apply-changes.sh
 
 # Deployment with frontend rebuild
-./apply-changes.sh --build
+./scripts/deployment/apply-changes.sh --build
 ```
 
 #### Options:
@@ -35,7 +35,7 @@ To deploy changes to both infrastructure and Lambda functions, use the `apply-ch
 If you only need to restart the frontend application without deploying infrastructure changes:
 
 ```bash
-./restart-frontend.sh
+./scripts/deployment/restart-frontend.sh
 ```
 
 ## Authentication System
@@ -121,7 +121,7 @@ cd ../../..
 
 1. Make changes to your infrastructure code in the `terraform/` directory
 2. Make changes to your Lambda function code in the `src/functions/` directory
-3. Run `./apply-changes.sh` to deploy all changes (this will automatically install dependencies)
+3. Run `./scripts/deployment/apply-changes.sh` to deploy all changes (this will automatically install dependencies)
 4. Test your changes
 
 ## Production Frontend Deployment
@@ -147,7 +147,7 @@ To deploy the frontend to production:
 
 2. **Deploy the frontend using the provided script**:
    ```bash
-   ./deploy-frontend.sh
+   ./scripts/deployment/deploy-frontend.sh
    ```
 
 This script will:

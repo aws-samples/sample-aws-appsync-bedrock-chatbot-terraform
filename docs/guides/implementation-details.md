@@ -4,7 +4,7 @@ This document provides a detailed explanation of how this simple serverless arch
 
 ## Numbered Flow Diagram
 
-![GenAI Chatbot Numbered Flow](generated-diagrams/genai-chatbot-numbered-flow.png)
+![GenAI Chatbot Numbered Flow](../../generated-diagrams/genai-chatbot-numbered-flow.png)
 
 The diagram above illustrates the complete flow of the GenAI Chatbot application, including both the authentication flow and conversation flow:
 
