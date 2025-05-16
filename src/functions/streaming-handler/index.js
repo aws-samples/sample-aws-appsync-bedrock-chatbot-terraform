@@ -1,5 +1,6 @@
 // Import AWS SDK v3 modules
 const { BedrockRuntimeClient, InvokeModelWithResponseStreamCommand } = require('@aws-sdk/client-bedrock-runtime');
+const { BedrockAgentRuntimeClient, RetrieveCommand } = require('@aws-sdk/client-bedrock-agent-runtime');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, UpdateCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
 const { AppSyncClient } = require('@aws-sdk/client-appsync');
@@ -15,6 +16,7 @@ const https = require('https');
 // Initialize AWS clients
 const region = process.env.AWS_REGION || 'us-east-1';
 const bedrockClient = new BedrockRuntimeClient({ region });
+const bedrockAgentClient = new BedrockAgentRuntimeClient({ region });
 const dynamoClient = new DynamoDBClient({ region });
 const ddbDocClient = DynamoDBDocumentClient.from(dynamoClient);
 const appsyncClient = new AppSyncClient({ region });
@@ -23,6 +25,7 @@ const ssmClient = new SSMClient({ region });
 // Environment variables
 const DYNAMODB_TABLE_NAME = process.env.DYNAMODB_TABLE_NAME;
 const BEDROCK_MODEL_ID = process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-sonnet-20240229-v1:0';
+const KNOWLEDGE_BASE_ID = process.env.KNOWLEDGE_BASE_ID;
 
 /**
  * Main handler for streaming responses from Bedrock
@@ -31,7 +34,7 @@ exports.handler = async (event) => {
   console.log('Event received:', JSON.stringify(event, null, 2));
   
   try {
-    const { messageId, conversationId, messages, appsyncEndpoint, appsyncApiKey } = event;
+    const { messageId, conversationId, messages, documentIds, userId, appsyncEndpoint, appsyncApiKey } = event;
     
     if (!messageId || !conversationId || !messages || !Array.isArray(messages)) {
       return {
@@ -47,6 +50,28 @@ exports.handler = async (event) => {
       console.warn('AppSync endpoint or API key not provided. Will not be able to publish updates.');
     }
     
+    // Check if this is a document-specific query
+    let enhancedPrompt = '';
+    if (documentIds && Array.isArray(documentIds) && documentIds.length > 0) {
+      console.log(`Processing document query for documents: ${documentIds.join(', ')}`);
+      
+      try {
+        // Query the Knowledge Base for relevant information
+        const retrievalResults = await queryKnowledgeBase(documentIds, messages[messages.length - 1].content, userId);
+        
+        if (retrievalResults && retrievalResults.length > 0) {
+          // Format the retrieved information for the prompt
+          enhancedPrompt = formatRetrievalResults(retrievalResults);
+          console.log('Enhanced prompt with Knowledge Base results');
+        } else {
+          console.log('No relevant information found in Knowledge Base');
+        }
+      } catch (error) {
+        console.error('Error querying Knowledge Base:', error);
+        // Continue without Knowledge Base results
+      }
+    }
+    
     // Format messages for Claude model
     const formattedMessages = messages.map(msg => {
       const role = msg.role === 'user' ? 'user' : 'assistant';
@@ -60,6 +85,25 @@ exports.handler = async (event) => {
         ]
       };
     });
+    
+    // If we have an enhanced prompt from the Knowledge Base, add it to the user's message
+    if (enhancedPrompt && formattedMessages.length > 0) {
+      const lastUserMessageIndex = formattedMessages.length - 1;
+      const userQuestion = formattedMessages[lastUserMessageIndex].content[0].text;
+      
+      // Create a system message with the retrieved information
+      formattedMessages.unshift({
+        role: 'system',
+        content: [
+          {
+            type: "text",
+            text: `You are an AI assistant that helps users find information in their documents. When answering questions about documents, use ONLY the information provided below and cite your sources. If the information needed is not in the provided context, say that you don't have enough information to answer accurately.\n\nHere is the relevant information from the user's documents:\n\n${enhancedPrompt}`
+          }
+        ]
+      });
+      
+      console.log('Added system message with Knowledge Base context');
+    }
     
     // Prepare the request body for streaming
     const requestBody = {
@@ -263,6 +307,114 @@ async function updateMessageInDynamoDB(messageId, content, isComplete, conversat
     console.log('Error updating DynamoDB with params:', JSON.stringify(params));
     throw error;
   }
+}
+
+/**
+ * Query the Knowledge Base for relevant information
+ */
+async function queryKnowledgeBase(documentIds, query, userId) {
+  if (!KNOWLEDGE_BASE_ID) {
+    console.warn('Knowledge Base ID not provided. Cannot query Knowledge Base.');
+    return [];
+  }
+  
+  console.log(`Querying Knowledge Base ${KNOWLEDGE_BASE_ID} for: "${query}"`);
+  
+  try {
+    // Create a filter to ensure user can only access their own documents
+    const filter = {
+      andAll: [
+        {
+          equals: {
+            key: "userId",
+            value: userId
+          }
+        },
+        {
+          inAll: {
+            key: "documentId",
+            values: documentIds
+          }
+        }
+      ]
+    };
+    
+    // Prepare the retrieve command
+    const retrieveParams = {
+      knowledgeBaseId: KNOWLEDGE_BASE_ID,
+      retrievalQuery: {
+        text: query
+      },
+      retrievalConfiguration: {
+        vectorSearchConfiguration: {
+          filter: filter,
+          numberOfResults: 5 // Limit to top 5 most relevant results
+        }
+      }
+    };
+    
+    console.log('Retrieve params:', JSON.stringify(retrieveParams, null, 2));
+    
+    // Execute the retrieve command
+    const retrieveCommand = new RetrieveCommand(retrieveParams);
+    const retrieveResponse = await bedrockAgentClient.send(retrieveCommand);
+    
+    console.log('Retrieve response:', JSON.stringify({
+      retrievalResultsCount: retrieveResponse.retrievalResults?.length || 0,
+      statusCode: retrieveResponse.$metadata?.httpStatusCode
+    }, null, 2));
+    
+    // Extract and return the retrieval results
+    if (retrieveResponse.retrievalResults && retrieveResponse.retrievalResults.length > 0) {
+      return retrieveResponse.retrievalResults.map(result => ({
+        content: result.content,
+        location: result.location,
+        metadata: result.metadata,
+        score: result.score
+      }));
+    }
+    
+    return [];
+  } catch (error) {
+    console.error('Error querying Knowledge Base:', error);
+    return [];
+  }
+}
+
+/**
+ * Format retrieval results for the prompt
+ */
+function formatRetrievalResults(retrievalResults) {
+  if (!retrievalResults || retrievalResults.length === 0) {
+    return '';
+  }
+  
+  let formattedResults = '';
+  
+  // Format each result with source information
+  retrievalResults.forEach((result, index) => {
+    // Extract document name from metadata or location
+    let documentName = 'Unknown Document';
+    let pageNumber = '';
+    
+    if (result.metadata && result.metadata.documentName) {
+      documentName = result.metadata.documentName;
+    } else if (result.location && result.location.s3Location && result.location.s3Location.uri) {
+      // Extract filename from S3 URI
+      const uriParts = result.location.s3Location.uri.split('/');
+      documentName = uriParts[uriParts.length - 1];
+    }
+    
+    // Extract page number if available
+    if (result.metadata && result.metadata.pageNumber) {
+      pageNumber = `, Page ${result.metadata.pageNumber}`;
+    }
+    
+    // Format the content with source citation
+    formattedResults += `[Source ${index + 1}: "${documentName}"${pageNumber}]\n${result.content}\n\n`;
+  });
+  
+  return formattedResults;
 }
 
 /**

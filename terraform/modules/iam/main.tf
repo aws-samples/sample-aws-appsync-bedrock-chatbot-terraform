@@ -84,6 +84,45 @@ resource "aws_iam_policy" "lambda_bedrock_policy" {
         ]
         Effect   = "Allow"
         Resource = "*"
+      },
+      {
+        Action = [
+          "bedrock:StartIngestionJob",
+          "bedrock:GetIngestionJob",
+          "bedrock:ListIngestionJobs",
+          "bedrock:Retrieve",
+          "bedrock:IngestKnowledgeBaseDocuments",
+          "bedrock:GetKnowledgeBase",
+          "bedrock:ListKnowledgeBases"
+        ]
+        Effect   = "Allow"
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Policy for Lambda to access S3
+resource "aws_iam_policy" "lambda_s3_policy" {
+  name        = "${var.project_name}-lambda-s3-policy-${var.environment}"
+  description = "Policy for Lambda to access S3 buckets"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+          "s3:GetObjectAttributes"
+        ]
+        Effect   = "Allow"
+        Resource = [
+          "arn:aws:s3:::${var.project_name}-user-documents-${var.environment}",
+          "arn:aws:s3:::${var.project_name}-user-documents-${var.environment}/*"
+        ]
       }
     ]
   })
@@ -212,6 +251,11 @@ resource "aws_iam_role_policy_attachment" "lambda_appsync_attachment" {
 resource "aws_iam_role_policy_attachment" "lambda_ssm_attachment" {
   role       = aws_iam_role.lambda_execution_role.name
   policy_arn = aws_iam_policy.lambda_ssm_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_s3_attachment" {
+  role       = aws_iam_role.lambda_execution_role.name
+  policy_arn = aws_iam_policy.lambda_s3_policy.arn
 }
 
 # AppSync service role

@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import './MessageBubble.css';
 
-// Simple pure component that renders exactly what it receives
+// Enhanced component that renders messages with citation support
 function MessageBubble({ message }) {
+  const [showCitationDetails, setShowCitationDetails] = useState(null);
   // Format timestamp for display
   const formatTimestamp = (timestamp) => {
     const date = new Date(timestamp);
@@ -40,6 +41,77 @@ function MessageBubble({ message }) {
     return null;
   }
 
+  // Parse message content for citations
+  const renderMessageWithCitations = (content) => {
+    if (!content) return null;
+    
+    // Regular expression to find citations in the format [doc:id:page]
+    const citationRegex = /\[doc:([a-zA-Z0-9-]+)(?::(\d+))?\]/g;
+    
+    // Split the content by citations
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+    
+    // Find all citations and split the content
+    while ((match = citationRegex.exec(content)) !== null) {
+      // Add the text before the citation
+      if (match.index > lastIndex) {
+        parts.push({
+          type: 'text',
+          content: content.substring(lastIndex, match.index)
+        });
+      }
+      
+      // Add the citation
+      parts.push({
+        type: 'citation',
+        documentId: match[1],
+        page: match[2] || null,
+        original: match[0]
+      });
+      
+      lastIndex = match.index + match[0].length;
+    }
+    
+    // Add the remaining text after the last citation
+    if (lastIndex < content.length) {
+      parts.push({
+        type: 'text',
+        content: content.substring(lastIndex)
+      });
+    }
+    
+    // If no citations were found, return the original content
+    if (parts.length === 0) {
+      return content;
+    }
+    
+    // Render the parts
+    return parts.map((part, index) => {
+      if (part.type === 'text') {
+        return <span key={index}>{part.content}</span>;
+      } else if (part.type === 'citation') {
+        return (
+          <span 
+            key={index} 
+            className="citation"
+            onClick={() => setShowCitationDetails(part)}
+            title="Click to view source"
+          >
+            [{part.page ? `${part.page}` : 'ref'}]
+          </span>
+        );
+      }
+      return null;
+    });
+  };
+  
+  // Handle closing the citation details
+  const handleCloseCitationDetails = () => {
+    setShowCitationDetails(null);
+  };
+
   return (
     <div 
       className={`message-bubble ${isUserMessage ? 'user-message' : 'assistant-message'}`}
@@ -48,7 +120,7 @@ function MessageBubble({ message }) {
       data-is-placeholder={isPlaceholder ? 'true' : 'false'}
     >
       <div className="message-content">
-        {message.content}
+        {renderMessageWithCitations(message.content)}
         {isGenerating && (
           <span className="typing-indicator">
             <span className="dot"></span>
@@ -60,6 +132,25 @@ function MessageBubble({ message }) {
       <div className="message-timestamp">
         {formatTimestamp(message.timestamp)}
       </div>
+      
+      {/* Citation details popup */}
+      {showCitationDetails && (
+        <div className="citation-details">
+          <div className="citation-details-header">
+            <h4>Source Document</h4>
+            <button className="close-button" onClick={handleCloseCitationDetails}>×</button>
+          </div>
+          <div className="citation-details-content">
+            <p><strong>Document ID:</strong> {showCitationDetails.documentId}</p>
+            {showCitationDetails.page && (
+              <p><strong>Page:</strong> {showCitationDetails.page}</p>
+            )}
+            <p className="citation-note">
+              This citation references content from your uploaded document.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

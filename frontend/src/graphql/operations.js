@@ -1,6 +1,38 @@
 import { gql } from '@apollo/client';
 
 // Queries
+// Document queries
+export const LIST_USER_DOCUMENTS = gql`
+  query ListUserDocuments {
+    listUserDocuments {
+      id
+      userId
+      documentName
+      documentType
+      uploadTimestamp
+      status
+      size
+      pageCount
+    }
+  }
+`;
+
+export const GET_DOCUMENT = gql`
+  query GetDocument($id: ID!) {
+    getDocument(id: $id) {
+      id
+      userId
+      documentName
+      documentType
+      uploadTimestamp
+      status
+      size
+      pageCount
+    }
+  }
+`;
+
+// Conversation queries
 export const GET_CONVERSATION = gql`
   query GetConversation($id: ID!) {
     getConversation(id: $id) {
@@ -51,6 +83,36 @@ export const GET_MESSAGES = gql`
 `;
 
 // Mutations
+// Document mutations
+export const GET_DOCUMENT_UPLOAD_URL = gql`
+  mutation GetDocumentUploadUrl($fileName: String!, $contentType: String!) {
+    getDocumentUploadUrl(fileName: $fileName, contentType: $contentType) {
+      uploadUrl
+      documentId
+    }
+  }
+`;
+
+export const DELETE_USER_DOCUMENT = gql`
+  mutation DeleteUserDocument($id: ID!) {
+    deleteUserDocument(id: $id)
+  }
+`;
+
+export const ASK_DOCUMENT_QUESTION = gql`
+  mutation AskDocumentQuestion($documentIds: [ID!]!, $question: String!) {
+    askDocumentQuestion(documentIds: $documentIds, question: $question) {
+      id
+      conversationId
+      content
+      role
+      timestamp
+      isComplete
+    }
+  }
+`;
+
+// Conversation mutations
 export const CREATE_CONVERSATION = gql`
   mutation CreateConversation($title: String) {
     createConversation(title: $title) {

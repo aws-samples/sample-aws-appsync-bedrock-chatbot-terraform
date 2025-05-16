@@ -33,5 +33,22 @@ variable "jwt_secret_arn" {
   type        = string
 }
 
+variable "user_documents_bucket" {
+  description = "Name of the S3 bucket for user documents"
+  type        = string
+}
+
+variable "knowledge_base_id" {
+  description = "ID of the Amazon Bedrock Knowledge Base"
+  type        = string
+  default     = ""
+}
+
+variable "knowledge_base_data_source_id" {
+  description = "ID of the Knowledge Base data source"
+  type        = string
+  default     = ""
+}
+
 # These variables are removed to break the circular dependency
 # The AppSync endpoint and API key will be passed through the event payload

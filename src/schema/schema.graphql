@@ -23,12 +23,39 @@ type Conversation {
   updatedAt: AWSDateTime!
 }
 
+enum DocumentStatus {
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+type UserDocument {
+  id: ID!
+  userId: String!
+  documentName: String!
+  documentType: String!
+  uploadTimestamp: AWSDateTime!
+  status: DocumentStatus!
+  size: Int!
+  pageCount: Int
+  ingestionJobId: String
+}
+
+type DocumentUploadUrl {
+  uploadUrl: String!
+  documentId: ID!
+}
+
 type Query {
   getMessage(id: ID!): Message
   getConversation(id: ID!): Conversation
   listConversations: [Conversation]
   listRecentConversations(limit: Int): [Conversation]
   getMessages(conversationId: ID!): [Message]
+  
+  # Document operations
+  listUserDocuments: [UserDocument]
+  getDocument(id: ID!): UserDocument
 }
 
 type Mutation {
@@ -36,6 +63,11 @@ type Mutation {
   createConversation(title: String): Conversation
   updateMessageContent(messageId: ID!, conversationId: ID!, content: String!, isComplete: Boolean!): MessageUpdate
     @aws_iam
+    
+  # Document operations
+  getDocumentUploadUrl(fileName: String!, contentType: String!): DocumentUploadUrl
+  deleteUserDocument(id: ID!): Boolean
+  askDocumentQuestion(documentIds: [ID!]!, question: String!): Message
 }
 
 type Subscription {

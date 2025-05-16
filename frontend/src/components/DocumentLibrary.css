@@ -1,0 +1,135 @@
+.document-library {
+  background-color: #f5f5f5;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.document-library h3 {
+  margin-top: 0;
+  margin-bottom: 16px;
+  color: #333;
+  font-size: 18px;
+}
+
+.no-documents {
+  text-align: center;
+  color: #666;
+  padding: 20px 0;
+}
+
+.document-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.document-item {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  border-radius: 6px;
+  background-color: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.document-item:hover {
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.document-item.selected {
+  background-color: #e6f7ff;
+  border-left: 4px solid #1890ff;
+}
+
+.document-icon {
+  font-size: 24px;
+  margin-right: 12px;
+  color: #555;
+}
+
+.document-details {
+  flex: 1;
+}
+
+.document-name {
+  font-weight: 500;
+  margin-bottom: 4px;
+  color: #333;
+  word-break: break-word;
+}
+
+.document-meta {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.document-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.status.processing {
+  background-color: #fffbe6;
+  color: #d48806;
+}
+
+.status.processed {
+  background-color: #f6ffed;
+  color: #52c41a;
+}
+
+.status.failed {
+  background-color: #fff1f0;
+  color: #f5222d;
+}
+
+.status.unknown {
+  background-color: #f5f5f5;
+  color: #666;
+}
+
+.page-count {
+  font-size: 12px;
+  color: #666;
+}
+
+.delete-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+  border-radius: 4px;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+}
+
+.delete-button:hover {
+  opacity: 1;
+  background-color: #f5f5f5;
+}
+
+.loading, .error {
+  text-align: center;
+  padding: 20px;
+  color: #666;
+}
+
+.error {
+  color: #f5222d;
+}

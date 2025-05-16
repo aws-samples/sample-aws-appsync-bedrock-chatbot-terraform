@@ -352,3 +352,131 @@ EOF
 
 # Note: Subscription resolvers for onNewMessage and onMessageUpdate have been removed
 # as they are now handled automatically by the @aws_subscribe directive in the schema
+
+# Document handler data source
+resource "aws_appsync_datasource" "document_handler_datasource" {
+  api_id           = aws_appsync_graphql_api.chatbot_api.id
+  name             = "DocumentHandlerDataSource"
+  type             = "AWS_LAMBDA"
+  service_role_arn = aws_iam_role.appsync_lambda_role.arn
+
+  lambda_config {
+    function_arn = var.lambda_function_arns.document_handler
+  }
+}
+
+# Document operation resolvers
+resource "aws_appsync_resolver" "list_user_documents_resolver" {
+  api_id      = aws_appsync_graphql_api.chatbot_api.id
+  type        = "Query"
+  field       = "listUserDocuments"
+  data_source = aws_appsync_datasource.message_handler_datasource.name
+
+  request_template = <<EOF
+{
+  "version": "2018-05-29",
+  "operation": "Invoke",
+  "payload": {
+    "action": "listUserDocuments",
+    "arguments": $util.toJson($context.arguments),
+    "identity": {
+      "resolverContext": $util.toJson($context.identity.resolverContext)
+    }
+  }
+}
+EOF
+
+  response_template = "$util.toJson($context.result)"
+}
+
+resource "aws_appsync_resolver" "get_document_resolver" {
+  api_id      = aws_appsync_graphql_api.chatbot_api.id
+  type        = "Query"
+  field       = "getDocument"
+  data_source = aws_appsync_datasource.message_handler_datasource.name
+
+  request_template = <<EOF
+{
+  "version": "2018-05-29",
+  "operation": "Invoke",
+  "payload": {
+    "action": "getDocument",
+    "arguments": $util.toJson($context.arguments),
+    "identity": {
+      "resolverContext": $util.toJson($context.identity.resolverContext)
+    }
+  }
+}
+EOF
+
+  response_template = "$util.toJson($context.result)"
+}
+
+resource "aws_appsync_resolver" "get_document_upload_url_resolver" {
+  api_id      = aws_appsync_graphql_api.chatbot_api.id
+  type        = "Mutation"
+  field       = "getDocumentUploadUrl"
+  data_source = aws_appsync_datasource.message_handler_datasource.name
+
+  request_template = <<EOF
+{
+  "version": "2018-05-29",
+  "operation": "Invoke",
+  "payload": {
+    "action": "getDocumentUploadUrl",
+    "arguments": $util.toJson($context.arguments),
+    "identity": {
+      "resolverContext": $util.toJson($context.identity.resolverContext)
+    }
+  }
+}
+EOF
+
+  response_template = "$util.toJson($context.result)"
+}
+
+resource "aws_appsync_resolver" "delete_user_document_resolver" {
+  api_id      = aws_appsync_graphql_api.chatbot_api.id
+  type        = "Mutation"
+  field       = "deleteUserDocument"
+  data_source = aws_appsync_datasource.message_handler_datasource.name
+
+  request_template = <<EOF
+{
+  "version": "2018-05-29",
+  "operation": "Invoke",
+  "payload": {
+    "action": "deleteUserDocument",
+    "arguments": $util.toJson($context.arguments),
+    "identity": {
+      "resolverContext": $util.toJson($context.identity.resolverContext)
+    }
+  }
+}
+EOF
+
+  response_template = "$util.toJson($context.result)"
+}
+
+resource "aws_appsync_resolver" "ask_document_question_resolver" {
+  api_id      = aws_appsync_graphql_api.chatbot_api.id
+  type        = "Mutation"
+  field       = "askDocumentQuestion"
+  data_source = aws_appsync_datasource.message_handler_datasource.name
+
+  request_template = <<EOF
+{
+  "version": "2018-05-29",
+  "operation": "Invoke",
+  "payload": {
+    "action": "askDocumentQuestion",
+    "arguments": $util.toJson($context.arguments),
+    "identity": {
+      "resolverContext": $util.toJson($context.identity.resolverContext)
+    }
+  }
+}
+EOF
+
+  response_template = "$util.toJson($context.result)"
+}

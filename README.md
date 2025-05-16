@@ -10,6 +10,7 @@ This project demonstrates how to build a generative AI chatbot on AWS using AppS
 - **[Authentication Guide](docs/guides/authentication-guide.md)**: Details on the authentication system
 - **[Data Modeling Guide](docs/guides/data-modeling.md)**: DynamoDB design patterns and access patterns
 - **[Implementation Details](docs/guides/implementation-details.md)**: Technical implementation with code examples
+- **[Knowledge Base Integration](docs/guides/knowledge-base-integration.md)**: Amazon Bedrock Knowledge Base integration details
 - **[Contributing](CONTRIBUTING.md)**: Guidelines for contributing to this project
 - **[Code of Conduct](CODE_OF_CONDUCT.md)**: Community standards and expectations
 
@@ -139,6 +140,16 @@ This chatbot implements a sophisticated streaming response mechanism that provid
 - **Subscription-based**: Uses AppSync subscriptions to push updates to the frontend
 - **Optimized UX**: Provides immediate feedback to users while the AI is generating responses
 - **Dedicated Lambda**: Uses a specialized streaming-handler Lambda function to process streaming responses from Bedrock
+
+### Knowledge Base Integration
+
+The chatbot integrates with Amazon Bedrock Knowledge Base to provide Retrieval Augmented Generation (RAG) capabilities:
+
+- **Organization-Specific Knowledge**: Connect the chatbot to your organization's documents and data sources
+- **User Document Upload**: Allow users to upload their own documents and query them directly
+- **Source Citations**: Responses include citations to the original source documents
+- **Document Isolation**: Strict security ensures users can only access their own documents
+- **Multiple Document Formats**: Support for PDF, Word, Excel, HTML, Markdown, and more
 
 ## Prerequisites
 
@@ -367,8 +378,8 @@ The solution can be extended in several ways:
 - Implementing a mobile frontend
 - Adding support for multiple AI models
 - Enhancing the conversation context with additional metadata
-- Adding RAG (Retrieval-Augmented Generation) capabilities
 - Implementing tool use and function calling
+- Adding multi-language support
 
 ## Cleanup
 

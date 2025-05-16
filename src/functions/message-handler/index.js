@@ -8,6 +8,9 @@ const lambda = new AWS.Lambda();
 // Environment variables
 const DYNAMODB_TABLE_NAME = process.env.DYNAMODB_TABLE_NAME;
 
+// Initialize S3 client
+const s3 = new AWS.S3();
+
 /**
  * Main handler for AppSync resolvers
  */
@@ -40,6 +43,18 @@ exports.handler = async (event) => {
     case 'onMessageUpdate':
       // For subscription, just pass through the arguments
       return args;
+    
+    // Document operations
+    case 'listUserDocuments':
+      return listUserDocuments(identity);
+    case 'getDocument':
+      return getDocument(args.id, identity);
+    case 'getDocumentUploadUrl':
+      return getDocumentUploadUrl(args.fileName, args.contentType, identity);
+    case 'deleteUserDocument':
+      return deleteUserDocument(args.id, identity);
+    case 'askDocumentQuestion':
+      return askDocumentQuestion(args.documentIds, args.question, identity);
     default:
       throw new Error(`Unsupported action: ${action}`);
   }
@@ -666,4 +681,321 @@ async function updateMessageContent(messageId, conversationId, content, isComple
     isComplete,
     timestamp
   };
+}
+
+/**
+ * List all documents for a user
+ */
+async function listUserDocuments(identity) {
+  const userId = identity?.resolverContext?.userId || 'default-user';
+  
+  const params = {
+    TableName: DYNAMODB_TABLE_NAME,
+    KeyConditionExpression: 'PK = :userId AND begins_with(SK, :sk_prefix)',
+    ExpressionAttributeValues: {
+      ':userId': `USER#${userId}`,
+      ':sk_prefix': 'DOC#'
+    }
+  };
+  
+  const result = await dynamodb.query(params).promise();
+  
+  // Transform the items to match the expected schema
+  return result.Items.map(item => ({
+    id: item.id,
+    userId: item.userId,
+    documentName: item.documentName,
+    documentType: item.documentType,
+    uploadTimestamp: item.uploadTimestamp,
+    status: item.status,
+    size: item.size,
+    pageCount: item.pageCount || 0,
+    ingestionJobId: item.ingestionJobId
+  }));
+}
+
+/**
+ * Get a document by ID
+ */
+async function getDocument(id, identity) {
+  const userId = identity?.resolverContext?.userId || 'default-user';
+  
+  const params = {
+    TableName: DYNAMODB_TABLE_NAME,
+    Key: { 
+      PK: `USER#${userId}`,
+      SK: `DOC#${id}`
+    }
+  };
+  
+  const result = await dynamodb.get(params).promise();
+  if (!result.Item) {
+    console.warn(`User ${userId} attempted to access document ${id} they don't own`);
+    return null;
+  }
+  
+  // Transform the item to match the expected schema
+  return {
+    id: result.Item.id,
+    userId: result.Item.userId,
+    documentName: result.Item.documentName,
+    documentType: result.Item.documentType,
+    uploadTimestamp: result.Item.uploadTimestamp,
+    status: result.Item.status,
+    size: result.Item.size,
+    pageCount: result.Item.pageCount || 0,
+    ingestionJobId: result.Item.ingestionJobId
+  };
+}
+
+/**
+ * Generate a presigned URL for document upload
+ */
+async function getDocumentUploadUrl(fileName, contentType, identity) {
+  const userId = identity?.resolverContext?.userId || 'default-user';
+  const documentId = uuidv4();
+  const timestamp = new Date().toISOString();
+  
+  // Create the S3 key with user isolation
+  const key = `user-documents/${userId}/${documentId}/original${getFileExtension(fileName)}`;
+  
+  // Generate a presigned URL for direct upload
+  const s3Params = {
+    Bucket: process.env.USER_DOCUMENTS_BUCKET,
+    Key: key,
+    ContentType: contentType,
+    Expires: 300 // URL expires in 5 minutes
+  };
+  
+  const uploadUrl = await s3.getSignedUrlPromise('putObject', s3Params);
+  
+  // Create document metadata in DynamoDB
+  const documentItem = {
+    PK: `USER#${userId}`,
+    SK: `DOC#${documentId}`,
+    id: documentId,
+    userId,
+    documentName: fileName,
+    documentType: contentType,
+    s3Path: key,
+    uploadTimestamp: timestamp,
+    status: 'PROCESSING', // Initial status
+    size: 0, // Will be updated after upload
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+  
+  await dynamodb.put({
+    TableName: DYNAMODB_TABLE_NAME,
+    Item: documentItem
+  }).promise();
+  
+  return {
+    uploadUrl,
+    documentId
+  };
+}
+
+/**
+ * Delete a user document
+ */
+async function deleteUserDocument(id, identity) {
+  const userId = identity?.resolverContext?.userId || 'default-user';
+  
+  // First verify ownership
+  const params = {
+    TableName: DYNAMODB_TABLE_NAME,
+    Key: { 
+      PK: `USER#${userId}`,
+      SK: `DOC#${id}`
+    }
+  };
+  
+  const result = await dynamodb.get(params).promise();
+  if (!result.Item) {
+    console.warn(`User ${userId} attempted to delete document ${id} they don't own`);
+    return false;
+  }
+  
+  // Delete the document from S3
+  if (result.Item.s3Path) {
+    try {
+      await s3.deleteObject({
+        Bucket: process.env.USER_DOCUMENTS_BUCKET,
+        Key: result.Item.s3Path
+      }).promise();
+    } catch (error) {
+      console.error(`Error deleting document from S3: ${error}`);
+      // Continue with DynamoDB deletion even if S3 deletion fails
+    }
+  }
+  
+  // Delete document metadata from DynamoDB
+  await dynamodb.delete({
+    TableName: DYNAMODB_TABLE_NAME,
+    Key: { 
+      PK: `USER#${userId}`,
+      SK: `DOC#${id}`
+    }
+  }).promise();
+  
+  // Delete any document chunks
+  try {
+    const chunksParams = {
+      TableName: DYNAMODB_TABLE_NAME,
+      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :sk_prefix)',
+      ExpressionAttributeValues: {
+        ':pk': `DOC#${id}`,
+        ':sk_prefix': 'CHUNK#'
+      }
+    };
+    
+    const chunksResult = await dynamodb.query(chunksParams).promise();
+    
+    // Delete chunks in batches of 25 (DynamoDB batch limit)
+    const chunkBatches = [];
+    for (let i = 0; i < chunksResult.Items.length; i += 25) {
+      const batch = chunksResult.Items.slice(i, i + 25);
+      chunkBatches.push(batch);
+    }
+    
+    for (const batch of chunkBatches) {
+      const deleteRequests = batch.map(chunk => ({
+        DeleteRequest: {
+          Key: {
+            PK: `DOC#${id}`,
+            SK: chunk.SK
+          }
+        }
+      }));
+      
+      await dynamodb.batchWrite({
+        RequestItems: {
+          [DYNAMODB_TABLE_NAME]: deleteRequests
+        }
+      }).promise();
+    }
+  } catch (error) {
+    console.error(`Error deleting document chunks: ${error}`);
+    // Continue even if chunk deletion fails
+  }
+  
+  return true;
+}
+
+/**
+ * Ask a question about specific documents
+ */
+async function askDocumentQuestion(documentIds, question, identity) {
+  const userId = identity?.resolverContext?.userId || 'default-user';
+  
+  // Verify document ownership for all documentIds
+  for (const documentId of documentIds) {
+    const userDocParams = {
+      TableName: DYNAMODB_TABLE_NAME,
+      Key: { 
+        PK: `USER#${userId}`,
+        SK: `DOC#${documentId}`
+      }
+    };
+    
+    const userDocResult = await dynamodb.get(userDocParams).promise();
+    if (!userDocResult.Item) {
+      console.warn(`User ${userId} attempted to access document ${documentId} they don't own`);
+      throw new Error(`Document with ID ${documentId} not found`);
+    }
+  }
+  
+  // Create a new conversation for this document question
+  const conversationTitle = documentIds.length === 1 
+    ? `Question about ${documentIds[0]}` 
+    : `Question about ${documentIds.length} documents`;
+  
+  const conversation = await createConversation(conversationTitle, identity);
+  
+  // Send the question as a message in the new conversation
+  const message = await sendMessage(conversation.id, question, identity);
+  
+  // Get AppSync details
+  const appSync = new AWS.AppSync();
+  const ssm = new AWS.SSM();
+  let appsyncEndpoint = '';
+  let appsyncApiKey = '';
+  
+  try {
+    // List GraphQL APIs to find the one for this project
+    const apis = await appSync.listGraphqlApis().promise();
+    const api = apis.graphqlApis.find(api => api.name.includes(process.env.PROJECT_NAME || 'chatbot'));
+    
+    if (api) {
+      appsyncEndpoint = api.uris.GRAPHQL;
+      
+      // Get API key from SSM Parameter Store
+      try {
+        const parameterName = `/${process.env.PROJECT_NAME}/appsync/api-key`;
+        const parameter = await ssm.getParameter({
+          Name: parameterName,
+          WithDecryption: true
+        }).promise();
+        
+        if (parameter && parameter.Parameter && parameter.Parameter.Value) {
+          appsyncApiKey = parameter.Parameter.Value;
+        }
+      } catch (ssmError) {
+        console.error('Error getting API key from SSM:', ssmError);
+      }
+    }
+  } catch (error) {
+    console.error('Error getting AppSync details:', error);
+  }
+  
+  // Invoke the streaming handler with document context
+  const streamingParams = {
+    FunctionName: process.env.STREAMING_HANDLER_FUNCTION,
+    InvocationType: 'Event',
+    Payload: JSON.stringify({
+      messageId: message.assistantMessage.id,
+      conversationId: conversation.id,
+      messages: [{ role: 'user', content: question }],
+      documentIds: documentIds, // Pass document IDs for context
+      userId: userId, // Pass user ID for security filtering
+      appsyncEndpoint,
+      appsyncApiKey
+    })
+  };
+  
+  try {
+    await lambda.invoke(streamingParams).promise();
+    console.log('Streaming handler invoked successfully with document context');
+  } catch (error) {
+    console.error('Error invoking streaming handler:', error);
+    
+    // Update the message to indicate an error
+    await updateMessageContent(
+      message.assistantMessage.id, 
+      conversation.id, 
+      "Sorry, I encountered an error while generating a response. Please try again.", 
+      true
+    );
+  }
+  
+  // Return the user message
+  return {
+    id: message.userMessage.id,
+    conversationId: message.userMessage.conversationId,
+    content: message.userMessage.content,
+    role: message.userMessage.role,
+    timestamp: message.userMessage.timestamp
+  };
+}
+
+/**
+ * Helper function to get file extension from filename
+ */
+function getFileExtension(fileName) {
+  const lastDotIndex = fileName.lastIndexOf('.');
+  if (lastDotIndex === -1) {
+    return ''; // No extension
+  }
+  return fileName.substring(lastDotIndex);
 }

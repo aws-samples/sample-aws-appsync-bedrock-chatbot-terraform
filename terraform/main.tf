@@ -48,6 +48,27 @@ module "appsync" {
   auth_lambda_function_arn = module.lambda.auth_handler_function_arn
 }
 
+# S3 bucket for user documents
+module "s3" {
+  source = "./modules/s3"
+  
+  project_name = var.project_name
+  environment  = var.environment
+}
+
+# Amazon Bedrock Knowledge Base
+module "bedrock" {
+  source = "./modules/bedrock"
+  
+  project_name = var.project_name
+  environment  = var.environment
+  aws_region   = var.aws_region
+  user_documents_bucket_arn = module.s3.user_documents_bucket_arn
+  lambda_execution_role_arn = module.iam.lambda_execution_role_arn
+  bedrock_service_role_arn = module.iam.lambda_execution_role_arn
+  create_knowledge_base = var.create_knowledge_base
+}
+
 # Lambda functions
 module "lambda" {
   source = "./modules/lambda"
@@ -59,6 +80,9 @@ module "lambda" {
   dynamodb_table_name = module.dynamodb.chatbot_data_table_name
   users_table_name = module.dynamodb.users_table_name
   jwt_secret_arn = module.secrets.jwt_secret_arn
+  user_documents_bucket = module.s3.user_documents_bucket_name
+  knowledge_base_id = module.bedrock.knowledge_base_id
+  knowledge_base_data_source_id = module.bedrock.knowledge_base_data_source_id
 }
 
 # Frontend hosting with S3 and CloudFront

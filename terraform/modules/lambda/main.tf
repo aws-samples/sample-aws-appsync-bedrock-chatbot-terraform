@@ -19,6 +19,13 @@ data "archive_file" "auth_handler_zip" {
   output_path = "${path.module}/auth-handler.zip"
 }
 
+# Create a zip file for the document handler Lambda function
+data "archive_file" "document_handler_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../../../src/functions/document-handler"
+  output_path = "${path.module}/document-handler.zip"
+}
+
 # Lambda function for handling messages
 resource "aws_lambda_function" "message_handler" {
   function_name = "${var.project_name}-message-handler-${var.environment}"
@@ -36,6 +43,7 @@ resource "aws_lambda_function" "message_handler" {
     variables = {
       DYNAMODB_TABLE_NAME         = var.dynamodb_table_name
       STREAMING_HANDLER_FUNCTION  = aws_lambda_function.streaming_handler.function_name
+      USER_DOCUMENTS_BUCKET       = var.user_documents_bucket
       PROJECT_NAME                = var.project_name
     }
   }
@@ -64,6 +72,7 @@ resource "aws_lambda_function" "streaming_handler" {
     variables = {
       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
       BEDROCK_MODEL_ID    = var.bedrock_model_id
+      KNOWLEDGE_BASE_ID   = var.knowledge_base_id
       PROJECT_NAME        = var.project_name
     }
   }
@@ -133,4 +142,67 @@ resource "aws_lambda_permission" "appsync_auth_handler_permission" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.auth_handler.function_name
   principal     = "appsync.amazonaws.com"
+}
+
+# Get current AWS account ID
+data "aws_caller_identity" "current" {}
+
+# Lambda function for document processing and Knowledge Base integration
+resource "aws_lambda_function" "document_handler" {
+  function_name = "${var.project_name}-document-handler-${var.environment}"
+  description   = "Lambda function for document processing and Knowledge Base integration"
+  role          = var.lambda_execution_role_arn
+  handler       = "index.handler"
+  runtime       = "nodejs18.x"
+  timeout       = 300  # 5 minutes for document processing
+  memory_size   = 512  # More memory for document processing
+
+  filename         = data.archive_file.document_handler_zip.output_path
+  source_code_hash = data.archive_file.document_handler_zip.output_base64sha256
+
+  environment {
+    variables = {
+      DYNAMODB_TABLE_NAME           = var.dynamodb_table_name
+      USER_DOCUMENTS_BUCKET         = var.user_documents_bucket
+      KNOWLEDGE_BASE_ID             = var.knowledge_base_id
+      KNOWLEDGE_BASE_DATA_SOURCE_ID = var.knowledge_base_data_source_id != null ? split(",", var.knowledge_base_data_source_id)[0] : ""
+      PROJECT_NAME                  = var.project_name
+      AWS_ACCOUNT_ID                = data.aws_caller_identity.current.account_id
+    }
+  }
+
+  tags = {
+    Name        = "${var.project_name}-document-handler"
+    Environment = var.environment
+  }
+}
+
+# Permission for AppSync to invoke the document handler Lambda function
+resource "aws_lambda_permission" "appsync_document_handler_permission" {
+  statement_id  = "AllowAppSyncToInvokeDocumentHandler"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.document_handler.function_name
+  principal     = "appsync.amazonaws.com"
+}
+
+# Permission for S3 to invoke the document handler Lambda function
+resource "aws_lambda_permission" "s3_document_handler_permission" {
+  statement_id  = "AllowS3ToInvokeDocumentHandler"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.document_handler.function_name
+  principal     = "s3.amazonaws.com"
+  source_arn    = "arn:aws:s3:::${var.user_documents_bucket}"
+}
+
+# S3 bucket notification configuration for document uploads
+resource "aws_s3_bucket_notification" "document_upload_notification" {
+  bucket = var.user_documents_bucket
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.document_handler.arn
+    events              = ["s3:ObjectCreated:*"]
+    filter_prefix       = "user-documents/"
+  }
+
+  depends_on = [aws_lambda_permission.s3_document_handler_permission]
 }

@@ -34,3 +34,9 @@ variable "cors_allowed_origins" {
   type        = list(string)
   default     = ["*"]
 }
+
+variable "create_knowledge_base" {
+  description = "Whether to create the Bedrock Knowledge Base"
+  type        = bool
+  default     = false
+}
