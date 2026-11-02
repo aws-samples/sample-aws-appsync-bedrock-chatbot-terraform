@@ -20,7 +20,13 @@ const KNOWLEDGE_BASE_DATA_SOURCE_ID = process.env.KNOWLEDGE_BASE_DATA_SOURCE_ID;
  * Main handler for document processing
  */
 exports.handler = async (event) => {
-  console.log('Event received:', JSON.stringify(event, null, 2));
+  // Do not log the raw event: S3 notifications include the uploader's principal
+  // ID and source IP, and direct invocations include caller identity.
+  console.log('Event received:', {
+    type: Array.isArray(event.Records) ? 's3' : (event.action ? 'invoke' : 'unknown'),
+    recordCount: Array.isArray(event.Records) ? event.Records.length : 0,
+    action: event.action
+  });
   
   try {
     // Handle S3 events for document uploads
