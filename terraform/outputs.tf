@@ -55,3 +55,14 @@ output "cloudfront_distribution_id" {
   description = "ID of the CloudFront distribution"
   value       = module.frontend.cloudfront_distribution_id
 }
+
+# Bedrock Knowledge Base outputs
+output "opensearch_collection_id" {
+  description = "ID of the OpenSearch Serverless Collection"
+  value       = module.bedrock.opensearch_collection_id
+}
+
+output "opensearch_collection_arn" {
+  description = "ARN of the OpenSearch Serverless Collection"
+  value       = module.bedrock.opensearch_collection_arn
+}

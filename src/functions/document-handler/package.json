@@ -1,0 +1,18 @@
+{
+  "name": "document-handler",
+  "version": "1.0.0",
+  "description": "Lambda function for handling document processing and Knowledge Base integration",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-agent": "^3.410.0",
+    "@aws-sdk/client-dynamodb": "^3.410.0",
+    "@aws-sdk/client-s3": "^3.410.0",
+    "@aws-sdk/lib-dynamodb": "^3.410.0",
+    "uuid": "^9.0.0"
+  },
+  "author": "",
+  "license": "MIT"
+}

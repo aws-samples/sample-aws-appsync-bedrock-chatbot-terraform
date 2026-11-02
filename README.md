@@ -10,6 +10,7 @@ This project demonstrates how to build a generative AI chatbot on AWS using AppS
 - **[Authentication Guide](docs/guides/authentication-guide.md)**: Details on the authentication system
 - **[Data Modeling Guide](docs/guides/data-modeling.md)**: DynamoDB design patterns and access patterns
 - **[Implementation Details](docs/guides/implementation-details.md)**: Technical implementation with code examples
+- **[Knowledge Base Integration](docs/guides/knowledge-base-integration.md)**: Amazon Bedrock Knowledge Base integration details
 - **[Contributing](CONTRIBUTING.md)**: Guidelines for contributing to this project
 - **[Code of Conduct](CODE_OF_CONDUCT.md)**: Community standards and expectations
 
@@ -139,6 +140,16 @@ This chatbot implements a sophisticated streaming response mechanism that provid
 - **Subscription-based**: Uses AppSync subscriptions to push updates to the frontend
 - **Optimized UX**: Provides immediate feedback to users while the AI is generating responses
 - **Dedicated Lambda**: Uses a specialized streaming-handler Lambda function to process streaming responses from Bedrock
+
+### Knowledge Base Integration
+
+The chatbot integrates with Amazon Bedrock Knowledge Base to provide Retrieval Augmented Generation (RAG) capabilities:
+
+- **Organization-Specific Knowledge**: Connect the chatbot to your organization's documents and data sources
+- **User Document Upload**: Allow users to upload their own documents and query them directly
+- **Source Citations**: Responses include citations to the original source documents
+- **Document Isolation**: Strict security ensures users can only access their own documents
+- **Multiple Document Formats**: Support for PDF, Word, Excel, HTML, Markdown, and more
 
 ## Prerequisites
 
@@ -367,8 +378,8 @@ The solution can be extended in several ways:
 - Implementing a mobile frontend
 - Adding support for multiple AI models
 - Enhancing the conversation context with additional metadata
-- Adding RAG (Retrieval-Augmented Generation) capabilities
 - Implementing tool use and function calling
+- Adding multi-language support
 
 ## Cleanup
 
@@ -390,6 +401,7 @@ Earlier versions of this sample logged the full Lambda event. This wrote the fol
 - **auth-handler**: the plaintext username and password from every `POST /login` request, and the full `Bearer` JWT from every AppSync authorization request.
 - **streaming-handler**: the AppSync API key and the conversation history.
 - **message-handler**: the user's message content.
+- **document-handler**: the full S3 event or invocation payload, including the uploader's identity and source IP.
 
 The Lambda log groups were also created without a retention policy, so these entries never expired.
 
@@ -397,7 +409,7 @@ The current version logs only non-sensitive metadata. It also creates the log gr
 
 **If you deployed an earlier version**, do the following:
 
-1. Delete the existing log streams, or the whole log groups, for the three functions. The log groups are named `/aws/lambda/<project_name>-auth-handler-<environment>`, `/aws/lambda/<project_name>-message-handler-<environment>`, and `/aws/lambda/<project_name>-streaming-handler-<environment>`.
+1. Delete the existing log streams, or the whole log groups, for the four functions. The log groups are named `/aws/lambda/<project_name>-auth-handler-<environment>`, `/aws/lambda/<project_name>-message-handler-<environment>`, `/aws/lambda/<project_name>-streaming-handler-<environment>`, and `/aws/lambda/<project_name>-document-handler-<environment>`.
 2. Ask all users to change their passwords, and rotate the JWT signing secret so that any logged tokens stop working.
 3. Rotate the AppSync API key.
 4. Check whether these log groups were exported or streamed elsewhere (subscription filters, S3 exports, SIEM), and purge the data there as well.
@@ -408,6 +420,7 @@ The current version logs only non-sensitive metadata. It also creates the log gr
    terraform import 'module.lambda.aws_cloudwatch_log_group.auth_handler' "/aws/lambda/<project_name>-auth-handler-<environment>"
    terraform import 'module.lambda.aws_cloudwatch_log_group.message_handler' "/aws/lambda/<project_name>-message-handler-<environment>"
    terraform import 'module.lambda.aws_cloudwatch_log_group.streaming_handler' "/aws/lambda/<project_name>-streaming-handler-<environment>"
+   terraform import 'module.lambda.aws_cloudwatch_log_group.document_handler' "/aws/lambda/<project_name>-document-handler-<environment>"
    ```
 
    If you skip this step, `terraform apply` fails with `ResourceAlreadyExistsException`.

@@ -35,6 +35,12 @@ variable "cors_allowed_origins" {
   default     = ["*"]
 }
 
+variable "create_knowledge_base" {
+  description = "Whether to create the Bedrock Knowledge Base"
+  type        = bool
+  default     = false
+}
+
 variable "log_retention_in_days" {
   description = "Number of days to retain Lambda CloudWatch logs"
   type        = number

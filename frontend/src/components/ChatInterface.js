@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useSubscription, useApolloClient } from '@apollo/client';
 import { GET_MESSAGES, SEND_MESSAGE, ON_NEW_MESSAGE, ON_MESSAGE_UPDATE } from '../graphql/operations';
 import MessageList from './MessageList';
+import DocumentSelector from './DocumentSelector';
 import './ChatInterface.css';
 
 function ChatInterface({ conversation }) {
@@ -894,6 +895,46 @@ function ChatInterface({ conversation }) {
         messages={messages}
         onScroll={(isNearBottom) => setShouldAutoScroll(isNearBottom)}
         ref={messagesEndRef}
+      />
+
+      {/* Document Selector for Knowledge Base integration */}
+      <DocumentSelector 
+        conversationId={conversation.id}
+        onQuestionSubmit={(message) => {
+          // When a document question is submitted, add it to the messages
+          if (message) {
+            // Create a temporary user message to display immediately
+            const tempUserMessage = {
+              id: `temp-user-${Date.now()}`,
+              conversationId: conversation.id,
+              content: message.content,
+              role: 'user',
+              timestamp: new Date().toISOString(),
+              isComplete: true
+            };
+            
+            // Add the user message to the state immediately
+            console.log('Adding document question to local state:', tempUserMessage);
+            setMessages(prevMessages => {
+              // Create a map of message IDs to messages for easy lookup
+              const messageMap = new Map();
+              
+              // First add all existing messages to the map
+              prevMessages.forEach(msg => {
+                messageMap.set(msg.id, msg);
+              });
+              
+              // Then add the new user message
+              messageMap.set(tempUserMessage.id, tempUserMessage);
+              
+              // Convert back to array and sort by timestamp
+              const mergedMessages = Array.from(messageMap.values())
+                .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+              
+              return mergedMessages;
+            });
+          }
+        }}
       />
 
       <form className="message-input-form" onSubmit={handleSendMessage}>
