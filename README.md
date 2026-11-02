@@ -383,6 +383,35 @@ terraform destroy
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
 
+### Security update: sensitive data in Lambda logs
+
+Earlier versions of this sample logged the full Lambda event. This wrote the following to CloudWatch Logs:
+
+- **auth-handler**: the plaintext username and password from every `POST /login` request, and the full `Bearer` JWT from every AppSync authorization request.
+- **streaming-handler**: the AppSync API key and the conversation history.
+- **message-handler**: the user's message content.
+
+The Lambda log groups were also created without a retention policy, so these entries never expired.
+
+The current version logs only non-sensitive metadata. It also creates the log groups in Terraform with a retention period, set by `log_retention_in_days` (default: 14 days).
+
+**If you deployed an earlier version**, do the following:
+
+1. Delete the existing log streams, or the whole log groups, for the three functions. The log groups are named `/aws/lambda/<project_name>-auth-handler-<environment>`, `/aws/lambda/<project_name>-message-handler-<environment>`, and `/aws/lambda/<project_name>-streaming-handler-<environment>`.
+2. Ask all users to change their passwords, and rotate the JWT signing secret so that any logged tokens stop working.
+3. Rotate the AppSync API key.
+4. Check whether these log groups were exported or streamed elsewhere (subscription filters, S3 exports, SIEM), and purge the data there as well.
+5. Before you run `terraform apply`, either delete the existing log groups (step 1) or import them so that Terraform can manage them:
+
+   ```bash
+   cd terraform
+   terraform import 'module.lambda.aws_cloudwatch_log_group.auth_handler' "/aws/lambda/<project_name>-auth-handler-<environment>"
+   terraform import 'module.lambda.aws_cloudwatch_log_group.message_handler' "/aws/lambda/<project_name>-message-handler-<environment>"
+   terraform import 'module.lambda.aws_cloudwatch_log_group.streaming_handler' "/aws/lambda/<project_name>-streaming-handler-<environment>"
+   ```
+
+   If you skip this step, `terraform apply` fails with `ResourceAlreadyExistsException`.
+
 ## License
 
 This library is licensed under the MIT-0 License. See the LICENSE file.

@@ -35,3 +35,9 @@ variable "jwt_secret_arn" {
 
 # These variables are removed to break the circular dependency
 # The AppSync endpoint and API key will be passed through the event payload
+
+variable "log_retention_in_days" {
+  description = "Number of days to retain Lambda CloudWatch logs"
+  type        = number
+  default     = 14
+}

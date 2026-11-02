@@ -19,6 +19,38 @@ data "archive_file" "auth_handler_zip" {
   output_path = "${path.module}/auth-handler.zip"
 }
 
+# CloudWatch log groups with explicit retention.
+# Without these, Lambda creates log groups that never expire.
+resource "aws_cloudwatch_log_group" "message_handler" {
+  name              = "/aws/lambda/${var.project_name}-message-handler-${var.environment}"
+  retention_in_days = var.log_retention_in_days
+
+  tags = {
+    Name        = "${var.project_name}-message-handler-logs"
+    Environment = var.environment
+  }
+}
+
+resource "aws_cloudwatch_log_group" "streaming_handler" {
+  name              = "/aws/lambda/${var.project_name}-streaming-handler-${var.environment}"
+  retention_in_days = var.log_retention_in_days
+
+  tags = {
+    Name        = "${var.project_name}-streaming-handler-logs"
+    Environment = var.environment
+  }
+}
+
+resource "aws_cloudwatch_log_group" "auth_handler" {
+  name              = "/aws/lambda/${var.project_name}-auth-handler-${var.environment}"
+  retention_in_days = var.log_retention_in_days
+
+  tags = {
+    Name        = "${var.project_name}-auth-handler-logs"
+    Environment = var.environment
+  }
+}
+
 # Lambda function for handling messages
 resource "aws_lambda_function" "message_handler" {
   function_name = "${var.project_name}-message-handler-${var.environment}"
@@ -44,6 +76,8 @@ resource "aws_lambda_function" "message_handler" {
     Name        = "${var.project_name}-message-handler"
     Environment = var.environment
   }
+
+  depends_on = [aws_cloudwatch_log_group.message_handler]
 }
 
 
@@ -72,6 +106,8 @@ resource "aws_lambda_function" "streaming_handler" {
     Name        = "${var.project_name}-streaming-handler"
     Environment = var.environment
   }
+
+  depends_on = [aws_cloudwatch_log_group.streaming_handler]
 }
 
 # Permission for AppSync to invoke the message handler Lambda function
@@ -125,6 +161,8 @@ resource "aws_lambda_function" "auth_handler" {
     Name        = "${var.project_name}-auth-handler"
     Environment = var.environment
   }
+
+  depends_on = [aws_cloudwatch_log_group.auth_handler]
 }
 
 # Permission for AppSync to invoke the auth handler Lambda function for authorization

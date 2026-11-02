@@ -28,10 +28,18 @@ const BEDROCK_MODEL_ID = process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-son
  * Main handler for streaming responses from Bedrock
  */
 exports.handler = async (event) => {
-  console.log('Event received:', JSON.stringify(event, null, 2));
-  
   try {
     const { messageId, conversationId, messages, appsyncEndpoint, appsyncApiKey } = event;
+
+    // Do not log the raw event: it contains the AppSync API key and the
+    // conversation history. Log only non-sensitive metadata.
+    console.log('Event received:', {
+      messageId,
+      conversationId,
+      messageCount: Array.isArray(messages) ? messages.length : 0,
+      hasAppsyncEndpoint: !!appsyncEndpoint,
+      hasAppsyncApiKey: !!appsyncApiKey
+    });
     
     if (!messageId || !conversationId || !messages || !Array.isArray(messages)) {
       return {

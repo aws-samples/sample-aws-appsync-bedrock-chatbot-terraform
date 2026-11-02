@@ -59,6 +59,7 @@ module "lambda" {
   dynamodb_table_name = module.dynamodb.chatbot_data_table_name
   users_table_name = module.dynamodb.users_table_name
   jwt_secret_arn = module.secrets.jwt_secret_arn
+  log_retention_in_days = var.log_retention_in_days
 }
 
 # Frontend hosting with S3 and CloudFront
