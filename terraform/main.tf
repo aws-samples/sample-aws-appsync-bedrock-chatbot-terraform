@@ -83,6 +83,7 @@ module "lambda" {
   user_documents_bucket = module.s3.user_documents_bucket_name
   knowledge_base_id = module.bedrock.knowledge_base_id
   knowledge_base_data_source_id = module.bedrock.knowledge_base_data_source_id
+  log_retention_in_days = var.log_retention_in_days
 }
 
 # Frontend hosting with S3 and CloudFront

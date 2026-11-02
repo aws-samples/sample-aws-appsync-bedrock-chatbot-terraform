@@ -40,3 +40,14 @@ variable "create_knowledge_base" {
   type        = bool
   default     = false
 }
+
+variable "log_retention_in_days" {
+  description = "Number of days to retain Lambda CloudWatch logs"
+  type        = number
+  default     = 14
+
+  validation {
+    condition     = contains([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653], var.log_retention_in_days)
+    error_message = "log_retention_in_days must be a value supported by CloudWatch Logs (for example 1, 7, 14, 30, 90, 365)."
+  }
+}

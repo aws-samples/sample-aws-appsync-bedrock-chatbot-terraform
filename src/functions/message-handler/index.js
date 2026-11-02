@@ -15,9 +15,14 @@ const s3 = new AWS.S3();
  * Main handler for AppSync resolvers
  */
 exports.handler = async (event) => {
-  console.log('Event received:', JSON.stringify(event, null, 2));
-  
   const { action, arguments: args, identity } = event;
+
+  // Do not log the raw event: it contains user message content and caller identity.
+  console.log('Event received:', {
+    action,
+    argumentKeys: args ? Object.keys(args) : [],
+    hasResolverContext: !!identity?.resolverContext
+  });
   
   switch (action) {
     case 'getMessage':
