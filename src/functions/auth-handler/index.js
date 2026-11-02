@@ -17,11 +17,15 @@ let cachedJwtSecret = null;
  * Main handler function that handles both login requests and token validation
  */
 exports.handler = async (event) => {
-  console.log('Event:', JSON.stringify(event, null, 2));
-  
-  // Determine if this is an API Gateway event (login request) or AppSync authorizer event
+  // Never log the raw event: for login requests the body contains the plaintext
+  // username/password, and for authorizer requests authorizationToken contains
+  // the full bearer JWT. Log only non-sensitive metadata.
   if (event.requestContext && event.requestContext.http) {
     // This is an API Gateway event (login request)
+    console.log('Login request received:', {
+      requestId: event.requestContext.requestId,
+      routeKey: event.routeKey
+    });
     return handleLogin(event);
   } else {
     // This is an AppSync authorizer event
@@ -114,7 +118,9 @@ async function handleLogin(event) {
       expiresIn: 86400 // 24 hours in seconds
     });
   } catch (error) {
-    console.error('Login error:', error);
+    // Log only the error name: on newer Node.js runtimes a JSON.parse
+    // SyntaxError message includes a snippet of the request body (credentials).
+    console.error('Login error:', { name: error.name });
     return formatResponse(500, { message: 'Internal server error' });
   }
 }
