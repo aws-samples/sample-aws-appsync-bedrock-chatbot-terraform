@@ -57,7 +57,7 @@ npm install
 AWS_REGION=us-east-1 USERS_TABLE_NAME=$(cd ../terraform && terraform output -raw dynamodb_users_table_name) node seed-users.js
 ```
 
-This creates the users `demo` and `admin`. Set their passwords with `DEMO_USER_PASSWORD` and `ADMIN_USER_PASSWORD` (at least 12 characters). If you don't set them, the script generates random passwords and prints them once. Save them when they are printed.
+This creates the users `demo` and `admin`. You must set their passwords with `DEMO_USER_PASSWORD` and `ADMIN_USER_PASSWORD` (at least 12 characters each). The script stops without creating any users if either is missing.
 
 ## Frontend Configuration
 

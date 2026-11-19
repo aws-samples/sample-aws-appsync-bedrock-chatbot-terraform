@@ -356,11 +356,13 @@ For detailed information about the authentication implementation, see the [Authe
 
 ### Demo Users
 
-The seed script creates two accounts, `demo` (role: user) and `admin` (role: admin). The login endpoint is public, so the script does not use fixed passwords. Set the passwords with `DEMO_USER_PASSWORD` and `ADMIN_USER_PASSWORD` (at least 12 characters). If you don't set them, the script generates random passwords and prints them once.
+The seed script creates two accounts, `demo` (role: user) and `admin` (role: admin). The login endpoint is public, so the script does not use fixed passwords. You must set the passwords with `DEMO_USER_PASSWORD` and `ADMIN_USER_PASSWORD` (at least 12 characters each). The script stops without creating any users if either is missing.
 
 ```bash
 cd scripts
 npm install
+read -rs DEMO_USER_PASSWORD && export DEMO_USER_PASSWORD
+read -rs ADMIN_USER_PASSWORD && export ADMIN_USER_PASSWORD
 AWS_REGION=us-east-1 USERS_TABLE_NAME=$(cd ../terraform && terraform output -raw dynamodb_users_table_name) node seed-users.js
 ```
 

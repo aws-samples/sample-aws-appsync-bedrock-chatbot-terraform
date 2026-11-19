@@ -1,6 +1,5 @@
 const AWS = require('aws-sdk');
 const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
 
 // Configure AWS SDK
 AWS.config.update({ region: process.env.AWS_REGION || 'us-east-1' });
@@ -11,48 +10,46 @@ const USERS_TABLE = process.env.USERS_TABLE_NAME || 'appsync-genai-chatbot-users
 
 const MIN_PASSWORD_LENGTH = 12;
 
-/**
- * Resolve a user's password. The login endpoint is public, so the sample never
- * ships a fixed password: use the given environment variable, or generate a
- * random password and print it once.
- */
-function resolvePassword(envVar) {
-  const fromEnv = process.env[envVar];
-  if (fromEnv) {
-    if (fromEnv.length < MIN_PASSWORD_LENGTH) {
-      throw new Error(`${envVar} must be at least ${MIN_PASSWORD_LENGTH} characters`);
-    }
-    return { password: fromEnv, generated: false };
-  }
-  return { password: crypto.randomBytes(18).toString('base64url'), generated: true };
-}
-
-// Demo users to create
+// The login endpoint is public, so the sample never ships fixed passwords.
+// Passwords come only from these environment variables and are never logged.
 const users = [
   {
     username: 'demo',
     email: 'demo@example.com',
-    passwordEnvVar: 'DEMO_USER_PASSWORD',
+    password: process.env.DEMO_USER_PASSWORD,
     roles: ['user']
   },
   {
     username: 'admin',
     email: 'admin@example.com',
-    passwordEnvVar: 'ADMIN_USER_PASSWORD',
+    password: process.env.ADMIN_USER_PASSWORD,
     roles: ['admin', 'user']
   }
 ];
 
 /**
+ * Fail before writing anything if a password is missing or too short.
+ */
+function validatePasswords() {
+  const invalid = users.filter(u => !u.password || u.password.length < MIN_PASSWORD_LENGTH);
+  if (invalid.length > 0) {
+    throw new Error(
+      `Missing or too short password for user(s): ${invalid.map(u => u.username).join(', ')}. ` +
+      `Set DEMO_USER_PASSWORD and ADMIN_USER_PASSWORD (at least ${MIN_PASSWORD_LENGTH} characters each).`
+    );
+  }
+}
+
+/**
  * Seed users into DynamoDB
  */
 async function seedUsers() {
+  validatePasswords();
   console.log(`Seeding ${users.length} users to table: ${USERS_TABLE}`);
   
   for (const user of users) {
-    // Resolve and hash the password
-    const { password, generated } = resolvePassword(user.passwordEnvVar);
-    const passwordHash = await bcrypt.hash(password, 10);
+    // Hash the password
+    const passwordHash = await bcrypt.hash(user.password, 10);
     
     const now = new Date().toISOString();
     
@@ -72,17 +69,12 @@ async function seedUsers() {
     
     try {
       await dynamodb.put(params).promise();
-      if (generated) {
-        // Printed once to the operator's terminal; it is not stored anywhere else.
-        console.log(`Created user: ${user.username} (generated password: ${password})`);
-      } else {
-        console.log(`Created user: ${user.username} (password from ${user.passwordEnvVar})`);
-      }
+      console.log(`Created user: ${user.username}`);
     } catch (error) {
       if (error.code === 'ConditionalCheckFailedException') {
         console.log(`User ${user.username} already exists, skipping`);
       } else {
-        console.error(`Error creating user ${user.username}:`, error);
+        console.error(`Error creating user ${user.username}:`, error.code || error.name);
       }
     }
   }
@@ -93,7 +85,7 @@ async function seedUsers() {
 // Run the seed function if this script is executed directly
 if (require.main === module) {
   seedUsers().catch(error => {
-    console.error('Error seeding users:', error);
+    console.error('Error seeding users:', error.message);
     process.exit(1);
   });
 }

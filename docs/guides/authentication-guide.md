@@ -407,7 +407,7 @@ Users are stored in DynamoDB with the following attributes:
 
 The project includes a script (`scripts/seed-users.js`) to create initial users: `demo` (role: user) and `admin` (roles: admin, user).
 
-The script does not ship fixed passwords. It reads them from `DEMO_USER_PASSWORD` and `ADMIN_USER_PASSWORD` (at least 12 characters). If a variable is not set, the script generates a random password and prints it once.
+The script does not ship fixed passwords. It requires `DEMO_USER_PASSWORD` and `ADMIN_USER_PASSWORD` (at least 12 characters each) and stops without creating any users if either is missing. Passwords are never logged.
 
 To seed users:
 
