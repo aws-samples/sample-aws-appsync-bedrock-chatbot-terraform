@@ -46,6 +46,7 @@ module "appsync" {
   lambda_function_arns = module.lambda.function_arns
   lambda_function_names = module.lambda.function_names
   auth_lambda_function_arn = module.lambda.auth_handler_function_arn
+  log_retention_in_days = var.log_retention_in_days
 }
 
 # S3 bucket for user documents

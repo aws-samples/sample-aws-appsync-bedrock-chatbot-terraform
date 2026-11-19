@@ -183,7 +183,8 @@ resource "aws_appsync_graphql_api" "chatbot_api" {
 
   log_config {
     cloudwatch_logs_role_arn = aws_iam_role.appsync_logs_role.arn
-    field_log_level          = "ALL"
+    field_log_level          = "ERROR"
+    exclude_verbose_content  = true
   }
 }
 ```
@@ -404,25 +405,9 @@ Users are stored in DynamoDB with the following attributes:
 
 ### User Seeding
 
-The project includes a script (`scripts/seed-users.js`) to create initial users:
+The project includes a script (`scripts/seed-users.js`) to create initial users: `demo` (role: user) and `admin` (roles: admin, user).
 
-```javascript
-// Demo users to create
-const users = [
-  {
-    username: 'demo',
-    email: 'demo@example.com',
-    password: 'password123',
-    roles: ['user']
-  },
-  {
-    username: 'admin',
-    email: 'admin@example.com',
-    password: 'admin123',
-    roles: ['admin', 'user']
-  }
-];
-```
+The script does not ship fixed passwords. It reads them from `DEMO_USER_PASSWORD` and `ADMIN_USER_PASSWORD` (at least 12 characters). If a variable is not set, the script generates a random password and prints it once.
 
 To seed users:
 
@@ -467,12 +452,14 @@ If WebSocket connections fail with authentication errors:
 
 ### Debugging Authentication
 
-1. Enable detailed logging in AppSync:
+1. If you need more detail, temporarily raise AppSync logging in a test environment only:
    ```terraform
    log_config {
-     field_log_level = "ALL"
+     field_log_level         = "ALL"
+     exclude_verbose_content = true # keep true: verbose content logs the Authorization header
    }
    ```
+   Set `field_log_level` back to `"ERROR"` when you are done. Field-level `ALL` logs resolver inputs and outputs, including user messages.
 
 2. Check CloudWatch logs for the Auth Lambda function
 

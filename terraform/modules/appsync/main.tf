@@ -14,13 +14,29 @@ resource "aws_appsync_graphql_api" "chatbot_api" {
     authentication_type = "AWS_IAM"
   }
 
+  # Verbose request-level logging writes request and response HTTP headers,
+  # including the Authorization bearer token, to CloudWatch Logs. Keep it off
+  # and log only field-level errors.
   log_config {
     cloudwatch_logs_role_arn = aws_iam_role.appsync_logs_role.arn
-    field_log_level          = "ALL"  # Change from ERROR to ALL for more detailed logs
+    field_log_level          = "ERROR"
+    exclude_verbose_content  = true
   }
 
   tags = {
     Name        = "${var.project_name}-api"
+    Environment = var.environment
+  }
+}
+
+# CloudWatch log group for AppSync with explicit retention.
+# Without this, AppSync creates /aws/appsync/apis/<api id> with no expiry.
+resource "aws_cloudwatch_log_group" "appsync" {
+  name              = "/aws/appsync/apis/${aws_appsync_graphql_api.chatbot_api.id}"
+  retention_in_days = var.log_retention_in_days
+
+  tags = {
+    Name        = "${var.project_name}-appsync-logs"
     Environment = var.environment
   }
 }

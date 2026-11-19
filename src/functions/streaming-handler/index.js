@@ -577,7 +577,7 @@ async function publishToAppSync(messageId, conversationId, content, isComplete, 
       const credentialsProvider = defaultProvider();
       try {
         const credentials = await credentialsProvider();
-        console.log('Using credentials with access key ID:', credentials.accessKeyId);
+        // Do not log credential identifiers; expiration is enough for debugging.
         console.log('Credentials expiration:', credentials.expiration);
       } catch (credError) {
         console.error('Error getting credentials:', credError);

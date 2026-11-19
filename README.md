@@ -354,16 +354,9 @@ Key features:
 
 For detailed information about the authentication implementation, see the [Authentication Guide](docs/guides/authentication-guide.md).
 
-### Demo Credentials
+### Demo Users
 
-For testing, you can use these pre-configured accounts:
-
-| Username | Password    | Role  |
-|----------|-------------|-------|
-| demo     | password123 | user  |
-| admin    | admin123    | admin |
-
-To seed these default users after deploying the infrastructure:
+The seed script creates two accounts, `demo` (role: user) and `admin` (role: admin). The login endpoint is public, so the script does not use fixed passwords. Set the passwords with `DEMO_USER_PASSWORD` and `ADMIN_USER_PASSWORD` (at least 12 characters). If you don't set them, the script generates random passwords and prints them once.
 
 ```bash
 cd scripts
@@ -403,14 +396,18 @@ Earlier versions of this sample logged the full Lambda event. This wrote the fol
 - **message-handler**: the user's message content.
 - **document-handler**: the full S3 event or invocation payload, including the uploader's identity and source IP.
 
-The Lambda log groups were also created without a retention policy, so these entries never expired.
+The AppSync API also had verbose request logging turned on (`field_log_level = "ALL"` with verbose content). This can write request headers, including the `Authorization` bearer token, to the `/aws/appsync/apis/<api id>` log group.
 
-The current version logs only non-sensitive metadata. It also creates the log groups in Terraform with a retention period, set by `log_retention_in_days` (default: 14 days).
+None of these log groups had a retention policy, so these entries never expired.
+
+Earlier versions of `scripts/seed-users.js` also created the users `demo` / `password123` and `admin` / `admin123`. These passwords were published in this README, and the login endpoint is public.
+
+The current version logs only non-sensitive metadata, turns off verbose AppSync logging (`field_log_level = "ERROR"`, `exclude_verbose_content = true`), and creates all log groups in Terraform with a retention period set by `log_retention_in_days` (default: 14 days). The seed script no longer uses fixed passwords.
 
 **If you deployed an earlier version**, do the following:
 
-1. Delete the existing log streams, or the whole log groups, for the four functions. The log groups are named `/aws/lambda/<project_name>-auth-handler-<environment>`, `/aws/lambda/<project_name>-message-handler-<environment>`, `/aws/lambda/<project_name>-streaming-handler-<environment>`, and `/aws/lambda/<project_name>-document-handler-<environment>`.
-2. Ask all users to change their passwords, and rotate the JWT signing secret so that any logged tokens stop working.
+1. Delete the existing log streams, or the whole log groups, for the four functions and the AppSync API. The log groups are named `/aws/lambda/<project_name>-auth-handler-<environment>`, `/aws/lambda/<project_name>-message-handler-<environment>`, `/aws/lambda/<project_name>-streaming-handler-<environment>`, `/aws/lambda/<project_name>-document-handler-<environment>`, and `/aws/appsync/apis/<api id>`.
+2. Ask all users to change their passwords, and rotate the JWT signing secret so that any logged tokens stop working. If you ran the seed script, change the `demo` and `admin` passwords, or delete those users.
 3. Rotate the AppSync API key.
 4. Check whether these log groups were exported or streamed elsewhere (subscription filters, S3 exports, SIEM), and purge the data there as well.
 5. Before you run `terraform apply`, either delete the existing log groups (step 1) or import them so that Terraform can manage them:
@@ -421,7 +418,10 @@ The current version logs only non-sensitive metadata. It also creates the log gr
    terraform import 'module.lambda.aws_cloudwatch_log_group.message_handler' "/aws/lambda/<project_name>-message-handler-<environment>"
    terraform import 'module.lambda.aws_cloudwatch_log_group.streaming_handler' "/aws/lambda/<project_name>-streaming-handler-<environment>"
    terraform import 'module.lambda.aws_cloudwatch_log_group.document_handler' "/aws/lambda/<project_name>-document-handler-<environment>"
+   terraform import 'module.appsync.aws_cloudwatch_log_group.appsync' "/aws/appsync/apis/<api id>"
    ```
+
+   To find `<api id>`, run `terraform state show module.appsync.aws_appsync_graphql_api.chatbot_api` and use the `id` value.
 
    If you skip this step, `terraform apply` fails with `ResourceAlreadyExistsException`.
 
