@@ -22,3 +22,9 @@ variable "auth_lambda_function_arn" {
   description = "ARN of the Auth Lambda function for authorization"
   type        = string
 }
+
+variable "log_retention_in_days" {
+  description = "Number of days to retain AppSync CloudWatch logs"
+  type        = number
+  default     = 14
+}

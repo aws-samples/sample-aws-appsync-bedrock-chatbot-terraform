@@ -1,6 +1,5 @@
 const AWS = require('aws-sdk');
 const bcrypt = require('bcryptjs');
-const { v4: uuidv4 } = require('uuid');
 
 // Configure AWS SDK
 AWS.config.update({ region: process.env.AWS_REGION || 'us-east-1' });
@@ -9,26 +8,43 @@ const dynamodb = new AWS.DynamoDB.DocumentClient();
 // Get table name from environment variable or use default
 const USERS_TABLE = process.env.USERS_TABLE_NAME || 'appsync-genai-chatbot-users';
 
-// Demo users to create
+const MIN_PASSWORD_LENGTH = 12;
+
+// The login endpoint is public, so the sample never ships fixed passwords.
+// Passwords come only from these environment variables and are never logged.
 const users = [
   {
     username: 'demo',
     email: 'demo@example.com',
-    password: 'password123',
+    password: process.env.DEMO_USER_PASSWORD,
     roles: ['user']
   },
   {
     username: 'admin',
     email: 'admin@example.com',
-    password: 'admin123',
+    password: process.env.ADMIN_USER_PASSWORD,
     roles: ['admin', 'user']
   }
 ];
 
 /**
+ * Fail before writing anything if a password is missing or too short.
+ */
+function validatePasswords() {
+  const invalid = users.filter(u => !u.password || u.password.length < MIN_PASSWORD_LENGTH);
+  if (invalid.length > 0) {
+    throw new Error(
+      `Missing or too short password for user(s): ${invalid.map(u => u.username).join(', ')}. ` +
+      `Set DEMO_USER_PASSWORD and ADMIN_USER_PASSWORD (at least ${MIN_PASSWORD_LENGTH} characters each).`
+    );
+  }
+}
+
+/**
  * Seed users into DynamoDB
  */
 async function seedUsers() {
+  validatePasswords();
   console.log(`Seeding ${users.length} users to table: ${USERS_TABLE}`);
   
   for (const user of users) {
@@ -58,7 +74,7 @@ async function seedUsers() {
       if (error.code === 'ConditionalCheckFailedException') {
         console.log(`User ${user.username} already exists, skipping`);
       } else {
-        console.error(`Error creating user ${user.username}:`, error);
+        console.error(`Error creating user ${user.username}:`, error.code || error.name);
       }
     }
   }
@@ -69,7 +85,7 @@ async function seedUsers() {
 // Run the seed function if this script is executed directly
 if (require.main === module) {
   seedUsers().catch(error => {
-    console.error('Error seeding users:', error);
+    console.error('Error seeding users:', error.message);
     process.exit(1);
   });
 }

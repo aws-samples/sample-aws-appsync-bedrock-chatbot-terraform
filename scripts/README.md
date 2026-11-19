@@ -17,6 +17,10 @@ AWS_REGION=us-east-1 USERS_TABLE_NAME=your-table-name node seed-users.js
 The script uses the following environment variables:
 - `AWS_REGION`: The AWS region where the DynamoDB table is located
 - `USERS_TABLE_NAME`: The name of the DynamoDB users table
+- `DEMO_USER_PASSWORD` (required): Password for the `demo` user, at least 12 characters
+- `ADMIN_USER_PASSWORD` (required): Password for the `admin` user, at least 12 characters
+
+The script stops without creating any users if either password is missing or too short.
 
 ### Example
 
@@ -30,7 +34,7 @@ AWS_REGION=us-east-1 USERS_TABLE_NAME=$(cd ../terraform && terraform output -raw
 
 ### What the Script Does
 
-1. Creates default users with predefined usernames and passwords
+1. Creates the `demo` and `admin` users with passwords from the environment
 2. Hashes passwords using bcrypt for secure storage
 3. Stores user data in the DynamoDB users table
 
